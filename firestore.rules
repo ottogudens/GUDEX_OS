@@ -1,0 +1,148 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =================================
+    //  Helper Functions
+    // =================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function getUserData(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && getUserData(request.auth.uid).role == 'Administrador';
+    }
+    
+    function isStaff() {
+      let userRole = getUserData(request.auth.uid).role;
+      return isSignedIn() && (userRole == 'Administrador' || userRole == 'Mecanico');
+    }
+    
+    function isClient() {
+      return isSignedIn() && getUserData(request.auth.uid).role == 'Cliente';
+    }
+
+    // =================================
+    //  Collection Rules
+    // =================================
+
+    // Settings
+    match /settings/{docId} {
+      allow read: if true; // Public settings can be read by anyone (app, server)
+      allow write: if isAdmin();
+    }
+    
+    // Users and Customers (document ID is the user UID)
+    match /users/{userId} {
+      allow read, update: if isAdmin() || isOwner(userId);
+      allow create, delete: if isAdmin();
+    }
+
+    match /customers/{userId} {
+      allow read: if isStaff() || isOwner(userId);
+      // Allow creation by Staff or during new client registration
+      allow create: if isStaff() || (isSignedIn() && request.resource.data.email == request.auth.token.email);
+      allow update: if isAdmin() || isOwner(userId);
+      allow delete: if isAdmin();
+    }
+    
+    // Vehicles
+    match /vehicles/{vehicleId} {
+        // Create: A client can create a vehicle for themselves. Staff can create for any client.
+        allow create: if (isClient() && request.resource.data.customerId == request.auth.uid) || isStaff();
+        
+        // Read: A client can read their own vehicles. Staff can read all vehicles.
+        allow read: if (isClient() && resource.data.customerId == request.auth.uid) || isStaff();
+        
+        // Update: A client can update their own vehicles. Staff can update all vehicles.
+        allow update: if (isClient() && resource.data.customerId == request.auth.uid) || isStaff();
+        
+        // Delete: Only staff can delete vehicles.
+        allow delete: if isStaff();
+    }
+
+    // Products & Services
+    match /products/{productId} {
+      allow read: if isStaff();
+      // Only Admins can create/delete/update prices etc.
+      allow create, delete: if isAdmin();
+      // Staff (Mecanico) can only update the stock field.
+      allow update: if isAdmin() || (isStaff() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock']));
+    }
+    
+    match /services/{serviceId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Categories (Managed by Admins)
+    match /productCategories/{categoryId} {
+        allow read: if isStaff();
+        allow create, update, delete: if isAdmin();
+    }
+    match /serviceCategories/{categoryId} {
+        allow read: if isStaff();
+        allow create, update, delete: if isAdmin();
+    }
+
+    // Stock Logs
+    match /stockLogs/{logId} {
+        allow create: if isStaff(); // Mechanics and Admins can create logs via stock take
+        allow read, update, delete: if isAdmin();
+    }
+    
+    // Workshop operations
+    match /appointments/{appointmentId} {
+      allow read, write: if isStaff();
+    }
+    
+    match /workOrders/{orderId} {
+      allow create, update: if isStaff();
+      allow read: if isStaff() || (isClient() && resource.data.customerId == request.auth.uid);
+    }
+    
+    // Admin-Only Areas
+    match /cameras/{cameraId} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /sales/{saleId} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /cashRegisterSessions/{sessionId} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /cashMovements/{movementId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Receipts can be read by clients
+    match /receipts/{receiptId} {
+      allow create: if isAdmin();
+      allow read: if isAdmin() || (isClient() && resource.data.customerId == request.auth.uid);
+    }
+    
+    // Server-side logging (write-only for servers)
+    match /emailLogs/{logId} {
+        allow create: if true;
+        allow read, update, delete: if isAdmin();
+    }
+
+    match /sentEmails/{emailId} {
+        allow create: if true;
+        allow read, update, delete: if isAdmin();
+    }
+  }
+}

@@ -33,11 +33,15 @@ import {
 import { es } from 'date-fns/locale';
 import { AuthGuard } from '@/components/AuthGuard';
 
+import { fetchAppointmentsByDate } from '@/lib/data';
+import { Skeleton } from '@/components/ui/skeleton';
+
 type Appointment = {
-  time: string;
-  customer: string;
-  vehicle: string;
+  id: string;
+  customerName: string;
   service: string;
+  vehicleDescription: string;
+  requestedDate: Date; // Assuming the fetched date is a Date object
 };
 
 export default function AppointmentsPage() {

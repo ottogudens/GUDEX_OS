@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useTransition } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { AuthGuard } from '@/components/AuthGuard';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/button'; // Keep this line
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Car, PlusCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
@@ -13,8 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { fetchVehiclesByCustomerId } from '@/lib/data';
-import { createVehicle } from '@/lib/mutations';
+import { db } from '@/lib/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore'; // Add these imports
 import { VehicleSchema } from '@/lib/schemas';
 import type { Vehicle, VehicleFormData } from '@/lib/types';
 import Image from 'next/image';
@@ -22,7 +22,7 @@ import Image from 'next/image';
 export default function ClientVehiclesPage() {
     const { user } = useAuth();
     const { toast } = useToast();
-    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    const [initialLoading, setInitialLoading] = useState(true); // Use a separate state for initial load
     const [loading, setLoading] = useState(true);
     const [isPending, startTransition] = useTransition();
 
@@ -31,23 +31,38 @@ export default function ClientVehiclesPage() {
     const [addImageFile, setAddImageFile] = useState<File | null>(null);
     const [addImagePreview, setAddImagePreview] = useState<string | null>(null);
 
-    const loadVehicles = useCallback(async () => {
-        if (!user?.id) return;
-        setLoading(true);
-        try {
-            const data = await fetchVehiclesByCustomerId(user.id);
-            setVehicles(data);
-        } catch (error) {
-            console.error("Failed to fetch vehicles:", error);
-            toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar tus vehículos.' });
-        } finally {
-            setLoading(false);
-        }
-    }, [user, toast]);
-
+    const [vehicles, setVehicles] = useState<Vehicle[]>([]); // Moved state declaration here
     useEffect(() => {
-        loadVehicles();
-    }, [loadVehicles]);
+        if (!user?.id) {
+            setInitialLoading(false);
+            setLoading(false);
+            setVehicles([]);
+            return;
+        }
+
+        // Set up real-time listener
+        setInitialLoading(true); // Start initial loading state
+        const vehiclesRef = collection(db, 'vehicles');
+        const q = query(vehiclesRef, where('customerId', '==', user.id));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const vehiclesData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+            })) as Vehicle[];
+            setVehicles(vehiclesData);
+            setLoading(false); // Data is loaded, stop the general loading indicator 
+            setInitialLoading(false); // Initial load complete
+        }, (error) => {
+            console.error("Error listening to vehicles:", error);
+            toast({ variant: 'destructive', title: 'Error', description: 'Error al sincronizar tus vehículos.' });
+            setLoading(false);
+            setInitialLoading(false);
+        });
+
+        // Clean up the listener on component unmount
+        return () => unsubscribe();
+    }, [user, toast]);
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value, type } = e.target;
@@ -97,7 +112,6 @@ export default function ClientVehiclesPage() {
                 toast({ title: '¡Éxito!', description: 'Tu vehículo ha sido añadido correctamente.' });
                 setIsAddDialogOpen(false);
                 resetForm();
-                await loadVehicles();
             } catch (error: any) {
                 toast({ variant: 'destructive', title: 'Error al añadir vehículo', description: error.message });
             }

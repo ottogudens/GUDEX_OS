@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { fetchWorkOrdersByCustomerId } from '@/lib/data';
+import { fetchWorkOrdersByCustomerId, fetchVehiclesByCustomerId } from '@/lib/data'; // Import fetchVehiclesByCustomerId
 import type { WorkOrder } from '@/lib/types';
 
 type Vehicle = {
@@ -38,9 +38,6 @@ type MaintenanceSuggestion = {
     vehicle: string;
 };
 
-const customerVehicles: Vehicle[] = [];
-const upcomingAppointments: Appointment[] = [];
-const suggestedMaintenance: MaintenanceSuggestion[] = [];
 
 const getStatusVariant = (status: WorkOrder['status']) => {
     switch (status) {
@@ -69,25 +66,70 @@ const getStatusText = (status: WorkOrder['status']) => {
 };
 
 export default function ClientPortalDashboard() {
-  const { user } = useAuth();
-  const [workHistory, setWorkHistory] = useState<WorkOrder[]>([]);
-  const [loading, setLoading] = useState(true);
+    const [workHistory, setWorkHistory] = useState<WorkOrder[]>([]);
+    const [customerVehicles, setCustomerVehicles] = useState<Vehicle[]>([]);
+    const [upcomingAppointments, setUpcomingAppointments] = useState<Appointment[]>([]);
+    const [suggestedMaintenance, setSuggestedMaintenance] = useState<MaintenanceSuggestion[]>([]);
 
+
+    const [loadingWorkHistory, setLoadingWorkHistory] = useState(true);
+    const [loadingVehicles, setLoadingVehicles] = useState(true);
+    const [loadingUpcomingAppointments, setLoadingUpcomingAppointments] = useState(true);
+    const [loadingSuggestedMaintenance, setLoadingSuggestedMaintenance] = useState(true);
+
+    const { user } = useAuth(); // Moved user hook here
   useEffect(() => {
     if (!user?.id) return;
 
     async function loadData() {
-        setLoading(true);
+        // Cargar Historial de Órdenes de Trabajo
+        setLoadingWorkHistory(true); // Usa el nuevo estado
         try {
             const historyData = await fetchWorkOrdersByCustomerId(user.id);
             setWorkHistory(historyData);
         } catch (error) {
             console.error("Failed to fetch client work orders:", error);
         } finally {
-            setLoading(false);
+            setLoadingWorkHistory(false); // Usa el nuevo estado
         }
-    }
-    loadData();
+  
+        // Cargar Vehículos del Cliente
+        setLoadingVehicles(true); // Usa el nuevo estado
+        try {
+            // Asegúrate de que fetchVehiclesByCustomerId esté importada al inicio del archivo
+            const vehiclesData = await fetchVehiclesByCustomerId(user.id);
+            setCustomerVehicles(vehiclesData);
+        } catch (error) {
+            console.error("Failed to fetch client vehicles:", error);
+        } finally {
+            setLoadingVehicles(false); // Usa el nuevo estado
+        }
+  
+        // TODO: Implementar fetching y estados de carga para Citas Próximas
+        // Descomenta y usa el estado si implementas el fetching
+        // setLoadingUpcomingAppointments(true);
+        // try {
+        //     const appointmentsData = await fetchUpcomingAppointmentsByCustomerId(user.id); // Necesitas crear esta función en @/lib/data.ts
+        //     setUpcomingAppointments(appointmentsData);
+        // } catch (error) {
+        //     console.error("Failed to fetch upcoming appointments:", error);
+        // } finally {
+        //     setLoadingUpcomingAppointments(false);
+        // }
+  
+        // TODO: Implementar fetching y estados de carga para Sugerencias de Mantención
+        // Descomenta y usa el estado si implementas el fetching
+        // setLoadingSuggestedMaintenance(true);
+        // try {
+        //     const suggestionsData = await fetchSuggestedMaintenanceByCustomerId(user.id); // Necesitas crear esta función en @/lib/data.ts
+        //     setSuggestedMaintenance(suggestionsData);
+        // } catch (error) {
+        //     console.error("Failed to fetch suggested maintenance:", error);
+        // } finally {
+        //     setLoadingSuggestedMaintenance(false);
+        // }
+      }
+      loadData();
   }, [user]);
 
   const formatDate = (timestamp: any) => {
@@ -110,7 +152,13 @@ export default function ClientPortalDashboard() {
                         <CardDescription>Vehículos registrados en tu cuenta.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        {customerVehicles.length > 0 ? (
+                        {loadingVehicles ? (
+                             Array.from({ length: 1 }).map((_, i) => (
+                                <div key={i} className="space-y-2 p-3 border rounded-md">
+                                    <Skeleton className="h-5 w-3/5" />
+                                </div>
+                            ))
+                        ) : customerVehicles.length > 0 ? (
                             <div className="space-y-4">
                                 {customerVehicles.map(vehicle => (
                                     <div key={vehicle.id} className="p-3 border rounded-md">
@@ -131,7 +179,13 @@ export default function ClientPortalDashboard() {
                         <CardDescription>Tus citas agendadas.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        {upcomingAppointments.length > 0 ? upcomingAppointments.map(apt => (
+                         {loadingUpcomingAppointments ? ( // Corrected loading state
+                             Array.from({ length: 1 }).map((_, i) => (
+                                <div key={i} className="space-y-2 p-3 border rounded-md">
+                                    <Skeleton className="h-5 w-3/5" />
+                                </div>
+                            ))
+                         ) : upcomingAppointments.length > 0 ? upcomingAppointments.map(apt => (
                              <div key={apt.id} className="p-3 border rounded-md">
                                 <p className="font-semibold">{apt.service}</p>
                                 <p className="text-sm text-muted-foreground">{apt.date} a las {apt.time}</p>
@@ -148,7 +202,7 @@ export default function ClientPortalDashboard() {
                          <CardDescription>Resumen de los últimos servicios realizados.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        {loading ? (
+                        {loadingWorkHistory ? ( // Corrected loading state
                             Array.from({ length: 3 }).map((_, i) => (
                                 <div key={i} className="space-y-2">
                                     <div className="flex justify-between items-center">
@@ -183,7 +237,13 @@ export default function ClientPortalDashboard() {
                          <CardDescription>Recomendaciones basadas en tus inspecciones.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        {suggestedMaintenance.length > 0 ? (
+                         {loadingSuggestedMaintenance ? ( // Corrected loading state
+                              Array.from({ length: 1 }).map((_, i) => (
+                                <div key={i} className="space-y-2 p-3 border rounded-md">
+                                    <Skeleton className="h-5 w-3/5" />
+                                </div>
+                            ))
+                         ) : suggestedMaintenance.length > 0 ? (
                             suggestedMaintenance.map((item, index) => (
                                 <div key={item.id}>
                                     <div className="flex justify-between items-start">

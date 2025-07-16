@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthGuard } from '@/components/AuthGuard';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,19 +30,36 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/context/AuthContext';
+import { fetchVehiclesByCustomerId, fetchServices, fetchProducts } from '@/lib/data';
+import { createBudgetRequest } from '@/lib/mutations'; // Assuming you will create this mutation function
+import type { Vehicle, Service, Product } from '@/lib/types';
+import { useTransition } from 'react';
+
 
 type Budget = {
     id: string;
     service: string;
     total: number;
     status: 'Esperando Aprobación' | 'Aprobado' | 'Rechazado';
-    date: string;
+    createdAt: string; // Use createdAt instead of date
+    vehicleId: string;
+    requestedItemId?: string; // Optional if custom description is used
+    requestedItemType?: 'service' | 'product'; // Optional
+    description?: string; // For manual description
 };
 
 export default function ClientBudgetsPage() {
     const [budgets, setBudgets] = useState<Budget[]>([]);
     const { toast } = useToast();
     const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
+
+    const { user } = useAuth();
+    const [customerVehicles, setCustomerVehicles] = useState<Vehicle[]>([]);
+    const [availableItems, setAvailableItems] = useState<(Service | Product)[]>([]);
+    const [loadingData, setLoadingData] = useState(true);
+    const [isPending, startTransition] = useTransition();
+    const [requestFormData, setRequestFormData] = useState({ vehicleId: '', requestedItem: '', description: '' });
 
     const handleApprove = (id: string) => {
         setBudgets(prev => prev.map(b => b.id === id ? { ...b, status: 'Aprobado' } : b));

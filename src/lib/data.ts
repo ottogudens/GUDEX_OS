@@ -24,7 +24,7 @@ import { db } from './firebase';
 import type { Customer, Service, ServiceHistory, User, Vehicle, Product, WorkshopSettings, ServiceCategory, Camera, WorkOrder, Receipt, DashboardData, Sale, SalesSummaryData, BestSeller, CashRegisterSession, CashMovement, ProductCategory, EmailSettings, SentEmail, EmailLog, StockLog, Provider } from './types';
 import { subMonths, format, startOfDay } from 'date-fns';
 
-// NOTE: For these functions to work, you must create collections
+// NOTE: For these functions to work, you must create the necessary collections
 // in your Firestore database named 'users', 'customers', 'vehicles', etc.
 // and populate them with some initial data matching the types in src/lib/types.ts.
 // The document ID from Firestore will be used as the 'id' field.
@@ -578,6 +578,35 @@ export async function fetchDashboardData(): Promise<DashboardData> {
       recentActivity: []
     };
   }
+}
+
+export async function fetchAppointmentsByDate(date: Date): Promise<Appointment[]> {
+    noStore();
+    try {
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const appointmentsCol = collection(db, 'appointments');
+        const q = query(
+            appointmentsCol,
+            where('requestedDate', '>=', Timestamp.fromDate(startOfDay)),
+            where('requestedDate', '<=', Timestamp.fromDate(endOfDay)),
+            orderBy('requestedDate', 'asc') // Order by time
+        );
+
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            requestedDate: (doc.data().requestedDate as Timestamp).toDate().toISOString(), // Convert Timestamp back to string
+        })) as Appointment[];
+    } catch (error) {
+        console.error('Error fetching appointments by date:', error);
+        return [];
+    }
 }
 
 export async function fetchSalesSummary(

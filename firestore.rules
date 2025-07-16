@@ -103,7 +103,15 @@ service cloud.firestore {
     
     // Workshop operations
     match /appointments/{appointmentId} {
-      allow read, write: if isStaff();
+      allow read: if isStaff(); // Staff can read appointments
+      allow create: if isStaff() || (isClient() && request.resource.data.customerId == request.auth.uid); // Staff can create any appointment, Client can create for themselves
+      allow write: if isStaff(); // Only Staff can update appointments
+    }
+    
+    // Budget Requests
+    match /budgetRequests/{requestId} {
+ allow create: if isStaff() || (isClient() && request.resource.data.customerId == request.auth.uid);
+ allow read, write, delete: if isStaff();
     }
     
     match /workOrders/{orderId} {

@@ -15,7 +15,7 @@ import nodemailer from 'nodemailer';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-export const SendAppointmentRequestEmailInputSchema = z.object({
+const SendAppointmentRequestEmailInputSchema = z.object({
     customerName: z.string().describe("The customer's name."),
     customerEmail: z.string().email().describe("The customer's email for contact."),
     vehicleDescription: z.string().describe("Description of the vehicle (e.g., 'Toyota Yaris 2020 (ABCD-12)')."),
@@ -23,7 +23,7 @@ export const SendAppointmentRequestEmailInputSchema = z.object({
     notes: z.string().optional().describe("Additional notes from the customer."),
     requestedDate: z.string().datetime().describe("The requested date and time for the appointment in ISO 8601 format."),
 });
-export type SendAppointmentRequestEmailInput = z.infer<typeof SendAppointmentRequestEmailInputSchema>;
+type SendAppointmentRequestEmailInput = z.infer<typeof SendAppointmentRequestEmailInputSchema>;
 
 
 export async function sendAppointmentRequestEmail(input: SendAppointmentRequestEmailInput): Promise<{ success: boolean }> {

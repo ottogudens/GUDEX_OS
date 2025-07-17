@@ -25,6 +25,17 @@ import { db } from './firebase';
 import type { Customer, Service, ServiceHistory, User, Vehicle, Product, WorkshopSettings, ServiceCategory, Camera, WorkOrder, Receipt, DashboardData, Sale, SalesSummaryData, BestSeller, CashRegisterSession, CashMovement, ProductCategory, EmailSettings, SentEmail, EmailLog, StockLog, Provider, Budget, Appointment, BudgetRequest } from './types';
 import { subMonths, format, startOfDay } from 'date-fns';
 
+function safeGetDate(dateField: any): string {
+    if (dateField instanceof Timestamp) {
+        return dateField.toDate().toISOString();
+    }
+    if (typeof dateField === 'string') {
+        return dateField;
+    }
+    // Fallback for other types or null/undefined
+    return new Date().toISOString();
+}
+
 // NOTE: For these functions to work, you must create the necessary collections
 // in your Firestore database named 'users', 'customers', 'vehicles', etc.
 // and populate them with some initial data matching the types in src/lib/types.ts.
@@ -610,19 +621,36 @@ export async function fetchAppointmentsByDate(date: Date): Promise<Appointment[]
         const appointmentsCol = collection(db, 'appointments');
         const q = query(
             appointmentsCol,
-            where('requestedDate', '>=', Timestamp.fromDate(startOfDay)),
-            where('requestedDate', '<=', Timestamp.fromDate(endOfDay)),
-            orderBy('requestedDate', 'asc') // Order by time
+            where('appointmentDate', '>=', Timestamp.fromDate(startOfDay)),
+            where('appointmentDate', '<=', Timestamp.fromDate(endOfDay)),
+            orderBy('appointmentDate', 'asc')
         );
 
         const snapshot = await getDocs(q);
         return snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
-            requestedDate: (doc.data().requestedDate as Timestamp).toDate().toISOString(), // Convert Timestamp back to string
+            appointmentDate: safeGetDate(doc.data().appointmentDate),
         })) as Appointment[];
     } catch (error) {
         console.error('Error fetching appointments by date:', error);
+        return [];
+    }
+}
+
+export async function fetchAppointmentRequests(): Promise<AppointmentRequest[]> {
+    noStore();
+    try {
+        const requestsCol = collection(db, 'appointmentRequests');
+        const q = query(requestsCol, where('status', '==', 'Pendiente'), orderBy('requestedDate', 'asc'));
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            requestedDate: safeGetDate(doc.data().requestedDate),
+        })) as AppointmentRequest[];
+    } catch (error) {
+        console.error('Error fetching appointment requests:', error);
         return [];
     }
 }

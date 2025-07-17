@@ -1,8 +1,8 @@
 
 'use client';
 import { db } from './firebase';
-import { collection, doc, addDoc, setDoc, serverTimestamp, updateDoc, deleteDoc, writeBatch, query, where, getDocs, limit } from 'firebase/firestore';
-import type { User, Customer, Product, Service, WorkshopSettings, ServiceCategory, ProductCategory, Camera, WorkOrder, Sale, CashMovement, AppointmentRequestFormData, Provider, ProviderPaymentFormData, Budget, BudgetRequest } from './types';
+import { collection, doc, addDoc, setDoc, serverTimestamp, updateDoc, deleteDoc, writeBatch, query, where, getDocs, limit, Timestamp } from 'firebase/firestore';
+import type { User, Customer, Product, Service, WorkshopSettings, ServiceCategory, ProductCategory, Camera, WorkOrder, Sale, CashMovement, AppointmentRequestFormData, Provider, ProviderPaymentFormData, Budget, BudgetRequest, Appointment } from './types';
 import { ProductFormData, ServiceFormData, ServiceCategoryFormData, ProductCategoryFormData, AddUserFormData, CameraFormData, EmailSettingsSchema, WorkOrderSchema, VehicleSchema, SaleSchema, ProviderSchema, ProviderPaymentSchema } from './schemas';
 import { z } from 'zod';
 
@@ -295,17 +295,34 @@ export async function createAppointmentRequest(appointmentData: AppointmentReque
     try {
         const dataWithTimestamp = {
             ...appointmentData,
+            requestedDate: Timestamp.fromDate(new Date(appointmentData.requestedDate)),
             status: 'Pendiente',
             createdAt: serverTimestamp(),
         };
-        // This would typically be 'appointmentRequests' for admin approval
-        const docRef = await addDoc(collection(db, "appointments"), dataWithTimestamp);
+        const docRef = await addDoc(collection(db, "appointmentRequests"), dataWithTimestamp);
         return docRef.id;
     } catch (error) {
         console.error("Error creating appointment request:", error);
         throw new Error("Failed to create appointment request.");
     }
 }
+
+export async function confirmAppointment(appointmentData: Omit<Appointment, 'id' | 'createdAt'>, requestId: string) {
+    const batch = writeBatch(db);
+
+    const appointmentRef = doc(collection(db, 'appointments'));
+    batch.set(appointmentRef, {
+        ...appointmentData,
+        appointmentDate: Timestamp.fromDate(new Date(appointmentData.appointmentDate)),
+        createdAt: serverTimestamp(),
+    });
+
+    const requestRef = doc(db, 'appointmentRequests', requestId);
+    batch.delete(requestRef);
+
+    await batch.commit();
+}
+
 
 // Provider Mutations
 export async function createProvider(providerData: Provider) {

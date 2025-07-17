@@ -12,17 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { fetchWorkOrdersByCustomerId, fetchVehiclesByCustomerId } from '@/lib/data'; // Import fetchVehiclesByCustomerId
-import type { WorkOrder } from '@/lib/types';
-
-type Vehicle = {
-    id: number;
-    make: string;
-    model: string;
-    year: number;
-    vin: string;
-    lastService: string;
-};
+import { fetchWorkOrdersByCustomerId, fetchVehiclesByCustomer } from '@/lib/data';
+import type { WorkOrder, Vehicle } from '@/lib/types';
 
 type Appointment = {
     id: number;
@@ -77,57 +68,36 @@ export default function ClientPortalDashboard() {
     const [loadingUpcomingAppointments, setLoadingUpcomingAppointments] = useState(true);
     const [loadingSuggestedMaintenance, setLoadingSuggestedMaintenance] = useState(true);
 
-    const { user } = useAuth(); // Moved user hook here
+    const { user } = useAuth();
   useEffect(() => {
     if (!user?.id) return;
 
     async function loadData() {
         // Cargar Historial de Órdenes de Trabajo
-        setLoadingWorkHistory(true); // Usa el nuevo estado
+        setLoadingWorkHistory(true);
         try {
             const historyData = await fetchWorkOrdersByCustomerId(user.id);
             setWorkHistory(historyData);
         } catch (error) {
             console.error("Failed to fetch client work orders:", error);
         } finally {
-            setLoadingWorkHistory(false); // Usa el nuevo estado
+            setLoadingWorkHistory(false);
         }
   
         // Cargar Vehículos del Cliente
-        setLoadingVehicles(true); // Usa el nuevo estado
+        setLoadingVehicles(true);
         try {
-            // Asegúrate de que fetchVehiclesByCustomerId esté importada al inicio del archivo
-            const vehiclesData = await fetchVehiclesByCustomerId(user.id);
+            const vehiclesData = await fetchVehiclesByCustomer(user.id);
             setCustomerVehicles(vehiclesData);
         } catch (error) {
             console.error("Failed to fetch client vehicles:", error);
         } finally {
-            setLoadingVehicles(false); // Usa el nuevo estado
+            setLoadingVehicles(false);
         }
   
         // TODO: Implementar fetching y estados de carga para Citas Próximas
-        // Descomenta y usa el estado si implementas el fetching
-        // setLoadingUpcomingAppointments(true);
-        // try {
-        //     const appointmentsData = await fetchUpcomingAppointmentsByCustomerId(user.id); // Necesitas crear esta función en @/lib/data.ts
-        //     setUpcomingAppointments(appointmentsData);
-        // } catch (error) {
-        //     console.error("Failed to fetch upcoming appointments:", error);
-        // } finally {
-        //     setLoadingUpcomingAppointments(false);
-        // }
   
         // TODO: Implementar fetching y estados de carga para Sugerencias de Mantención
-        // Descomenta y usa el estado si implementas el fetching
-        // setLoadingSuggestedMaintenance(true);
-        // try {
-        //     const suggestionsData = await fetchSuggestedMaintenanceByCustomerId(user.id); // Necesitas crear esta función en @/lib/data.ts
-        //     setSuggestedMaintenance(suggestionsData);
-        // } catch (error) {
-        //     console.error("Failed to fetch suggested maintenance:", error);
-        // } finally {
-        //     setLoadingSuggestedMaintenance(false);
-        // }
       }
       loadData();
   }, [user]);
@@ -162,8 +132,8 @@ export default function ClientPortalDashboard() {
                             <div className="space-y-4">
                                 {customerVehicles.map(vehicle => (
                                     <div key={vehicle.id} className="p-3 border rounded-md">
-                                        <p className="font-semibold">{vehicle.year} {vehicle.make} {vehicle.model}</p>
-                                        <p className="text-xs text-muted-foreground">Último servicio: {vehicle.lastService}</p>
+                                        <p className="font-semibold">{vehicle.year} {vehicle.brand} {vehicle.model}</p>
+                                        <p className="text-xs text-muted-foreground">{vehicle.plate}</p>
                                     </div>
                                 ))}
                             </div>
@@ -179,7 +149,7 @@ export default function ClientPortalDashboard() {
                         <CardDescription>Tus citas agendadas.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                         {loadingUpcomingAppointments ? ( // Corrected loading state
+                         {loadingUpcomingAppointments ? (
                              Array.from({ length: 1 }).map((_, i) => (
                                 <div key={i} className="space-y-2 p-3 border rounded-md">
                                     <Skeleton className="h-5 w-3/5" />
@@ -202,7 +172,7 @@ export default function ClientPortalDashboard() {
                          <CardDescription>Resumen de los últimos servicios realizados.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        {loadingWorkHistory ? ( // Corrected loading state
+                        {loadingWorkHistory ? (
                             Array.from({ length: 3 }).map((_, i) => (
                                 <div key={i} className="space-y-2">
                                     <div className="flex justify-between items-center">
@@ -237,7 +207,7 @@ export default function ClientPortalDashboard() {
                          <CardDescription>Recomendaciones basadas en tus inspecciones.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                         {loadingSuggestedMaintenance ? ( // Corrected loading state
+                         {loadingSuggestedMaintenance ? (
                               Array.from({ length: 1 }).map((_, i) => (
                                 <div key={i} className="space-y-2 p-3 border rounded-md">
                                     <Skeleton className="h-5 w-3/5" />

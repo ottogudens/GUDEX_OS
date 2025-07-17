@@ -1,7 +1,7 @@
 
 "use client"; 
 
-import { useState } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -11,7 +11,15 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, Clock } from 'lucide-react';
+import { es } from 'date-fns/locale';
+import { AuthGuard } from '@/components/AuthGuard';
+import { fetchAppointmentsByDate, fetchAppointmentRequests } from '@/lib/data';
+import { confirmAppointment } from '@/lib/mutations';
+import { Skeleton } from '@/components/ui/skeleton';
+import type { Appointment, AppointmentRequest } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
+import { format, parseISO } from 'date-fns';
 import {
   Dialog,
   DialogContent,
@@ -30,146 +38,138 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { es } from 'date-fns/locale';
-import { AuthGuard } from '@/components/AuthGuard';
-
-import { fetchAppointmentsByDate } from '@/lib/data';
-import { Skeleton } from '@/components/ui/skeleton';
-
-type Appointment = {
-  id: string;
-  customerName: string;
-  service: string;
-  vehicleDescription: string;
-  requestedDate: Date; // Assuming the fetched date is a Date object
-};
 
 export default function AppointmentsPage() {
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
   const [date, setDate] = useState<Date | undefined>(new Date());
+  
+  const [requests, setRequests] = useState<AppointmentRequest[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [newAppointment, setNewAppointment] = useState({ customer: '', vehicle: '', service: '', time: '09:00' });
 
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement> | string, field: string) => {
-    if (typeof e === 'string') {
-      setNewAppointment(prev => ({ ...prev, [field]: e }));
-    } else {
-      const { id, value } = e.target;
-      setNewAppointment(prev => ({ ...prev, [id]: value }));
+  const loadData = () => {
+    startTransition(async () => {
+      try {
+        const [requestsData, appointmentsData] = await Promise.all([
+          fetchAppointmentRequests(),
+          date ? fetchAppointmentsByDate(date) : Promise.resolve([]),
+        ]);
+        setRequests(requestsData);
+        setAppointments(appointmentsData);
+      } catch (error) {
+        toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos.' });
+      }
+    });
+  };
+  
+  useEffect(() => {
+    loadData();
+  }, [date]);
+
+  const handleConfirmRequest = async (request: any) => {
+    try {
+        const vehicleIdString = request.vehicleIdentifier || request.vehicleDescription || 'Vehículo no especificado';
+        
+        let serviceDescription = request.service || request.description || 'Servicio no especificado';
+        if (request.notes) {
+            serviceDescription += ` (Notas: ${request.notes})`;
+        }
+
+        await confirmAppointment({
+            customerId: request.customerId,
+            customerName: request.customerName,
+            vehicleId: request.vehicleId,
+            vehicleIdentifier: vehicleIdString,
+            service: serviceDescription,
+            status: 'Confirmada',
+            appointmentDate: request.requestedDate,
+        }, request.id);
+
+        toast({ title: 'Cita Confirmada', description: `La cita para ${request.customerName} ha sido agendada.` });
+        loadData();
+    } catch (error) {
+        console.error("Error confirming appointment", error)
+        toast({ variant: 'destructive', title: 'Error', description: 'No se pudo confirmar la cita.' });
     }
   };
 
-  const handleAddAppointment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newAppointment.customer && newAppointment.vehicle && newAppointment.service) {
-      // Format time to AM/PM
-      const [hour, minute] = newAppointment.time.split(':');
-      const formattedHour = parseInt(hour, 10) % 12 || 12;
-      const ampm = parseInt(hour, 10) >= 12 ? 'PM' : 'AM';
-      const formattedTime = `${formattedHour}:${minute} ${ampm}`;
-
-      setAppointments(prev => [...prev, { ...newAppointment, time: formattedTime }].sort((a, b) => a.time.localeCompare(b.time)));
-      setNewAppointment({ customer: '', vehicle: '', service: '', time: '09:00' });
-    }
-  };
 
   return (
     <AuthGuard allowedRoles={['Administrador', 'Mecanico']}>
-      <div className="grid md:grid-cols-3 gap-8 items-start">
-        <div className="md:col-span-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Citas</CardTitle>
-                <CardDescription>Gestiona el horario de tu taller.</CardDescription>
-              </div>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button>
-                    <PlusCircle className="mr-2 h-4 w-4" /> Agendar Nueva
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Nueva Cita</DialogTitle>
-                    <DialogDescription>
-                      Completa el formulario para agendar una nueva cita.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleAddAppointment}>
-                    <div className="grid gap-4 py-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="customer">Nombre del Cliente</Label>
-                        <Input id="customer" placeholder="ej. Juan Pérez" value={newAppointment.customer} onChange={(e) => handleFormChange(e, 'customer')} required />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="vehicle">Vehículo</Label>
-                        <Input id="vehicle" placeholder="ej. Toyota Camry 2021" value={newAppointment.vehicle} onChange={(e) => handleFormChange(e, 'vehicle')} required />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="service">Tipo de Servicio</Label>
-                        <Select value={newAppointment.service} onValueChange={(value) => handleFormChange(value, 'service')}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecciona un servicio" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Cambio de Aceite">Cambio de Aceite</SelectItem>
-                            <SelectItem value="Servicio de Frenos">Servicio de Frenos</SelectItem>
-                            <SelectItem value="Servicio de Llantas">Servicio de Llantas</SelectItem>
-                            <SelectItem value="Diagnóstico">Diagnóstico</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                       <div className="grid gap-2">
-                        <Label htmlFor="time">Hora</Label>
-                        <Input id="time" type="time" value={newAppointment.time} onChange={(e) => handleFormChange(e, 'time')} required />
-                      </div>
-                      <DialogClose asChild>
-                        <Button type="submit" className="w-full">
-                          Confirmar Cita
-                        </Button>
-                      </DialogClose>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </CardHeader>
-            <CardContent>
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={setDate}
-                className="rounded-md border"
-                locale={es}
-              />
-            </CardContent>
-          </Card>
+      <div className="grid lg:grid-cols-3 gap-8 items-start">
+        <div className="lg:col-span-2">
+            <Card>
+                 <CardHeader>
+                    <CardTitle>Calendario de Citas</CardTitle>
+                    <CardDescription>Selecciona un día para ver y gestionar las citas.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center">
+                    <Calendar
+                        mode="single"
+                        selected={date}
+                        onSelect={setDate}
+                        className="rounded-md border"
+                        locale={es}
+                    />
+                </CardContent>
+            </Card>
+             <Card className="mt-8">
+                <CardHeader>
+                    <CardTitle>Citas para el {date ? format(date, 'PPP', { locale: es }) : '...'}</CardTitle>
+                    <CardDescription>Estos son los vehículos agendados para este día.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4">
+                 {isPending && appointments.length === 0 ? (
+                    Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
+                 ) : appointments.length > 0 ? (
+                    appointments.map((apt) => (
+                        <div key={apt.id} className="flex items-start gap-4 p-3 rounded-lg border">
+                            <div className="font-bold text-lg text-primary flex flex-col items-center">
+                                <span>{format(parseISO(apt.appointmentDate), 'HH:mm')}</span>
+                            </div>
+                            <div className="border-l pl-4">
+                                <p className="font-semibold">{apt.customerName}</p>
+                                <p className="text-sm text-muted-foreground">{apt.vehicleIdentifier}</p>
+                                <p className="text-sm mt-1">{apt.service}</p>
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    <p className="text-muted-foreground text-center py-4">No hay citas para este día.</p>
+                )}
+                </CardContent>
+            </Card>
         </div>
-        <div>
+        <div className="lg:col-span-1 space-y-8">
           <Card>
             <CardHeader>
-              <CardTitle>
-                Próximas para el {date ? date.toLocaleDateString('es-ES') : 'día seleccionado'}
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="w-6 h-6" />
+                Solicitudes Pendientes
               </CardTitle>
+              <CardDescription>Clientes esperando confirmación para su cita.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              {appointments.length > 0 ? appointments.map((apt, index) => (
-                <div
-                  key={index}
-                  className="flex items-start gap-4 p-3 rounded-lg border"
-                >
-                  <div className="font-bold text-accent">{apt.time}</div>
-                  <div>
-                    <p className="font-semibold">{apt.customer}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {apt.vehicle}
-                    </p>
-                    <p className="text-sm">{apt.service}</p>
-                  </div>
-                </div>
-              )) : (
-                <p className="text-muted-foreground">
-                  No hay citas para este día.
-                </p>
+              {isPending && requests.length === 0 ? (
+                 Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)
+              ) : requests.length > 0 ? (
+                requests.map((req) => (
+                    <div key={req.id} className="p-3 rounded-lg border space-y-3">
+                        <div>
+                            <p className="font-semibold">{req.customerName}</p>
+                            <p className="text-sm text-muted-foreground">{req.vehicleIdentifier}</p>
+                        </div>
+                         <p className="text-sm bg-muted p-2 rounded-md">"{req.description}"</p>
+                         <p className="text-xs text-center font-medium text-primary">
+                            Solicitada para: {format(parseISO(req.requestedDate), 'PPP p', { locale: es })}
+                         </p>
+                         <Button className="w-full" size="sm" onClick={() => handleConfirmRequest(req)}>
+                            Confirmar y Agendar
+                        </Button>
+                    </div>
+                ))
+              ) : (
+                <p className="text-muted-foreground text-center py-4">No hay solicitudes pendientes.</p>
               )}
             </CardContent>
           </Card>

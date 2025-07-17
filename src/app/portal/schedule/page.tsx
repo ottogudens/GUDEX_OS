@@ -11,8 +11,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { es } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
-import { fetchVehiclesByCustomerId } from '@/lib/data';
-import { createAppointment } from '@/lib/mutations';
+import { fetchVehiclesByCustomer } from '@/lib/data';
+import { createAppointmentRequest } from '@/lib/mutations';
 import type { Vehicle } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppointmentRequestSchema } from '@/lib/schemas';
@@ -42,7 +42,7 @@ export default function ClientSchedulePage() {
       const loadVehicles = async () => {
         setLoadingVehicles(true);
         try {
-          const data = await fetchVehiclesByCustomerId(user.id);
+          const data = await fetchVehiclesByCustomer(user.id);
           setVehicles(data);
         } catch (error) {
           toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar tus vehículos.' });
@@ -74,9 +74,9 @@ export default function ClientSchedulePage() {
     const dataToValidate = {
         customerId: user.id,
         customerName: user.name,
-        customerEmail: user.email,
+        customerEmail: user.email ?? '',
         vehicleId: selectedVehicle.id,
-        vehicleDescription: `${selectedVehicle.make} ${selectedVehicle.model} (${selectedVehicle.licensePlate})`,
+        vehicleIdentifier: `${selectedVehicle.brand} ${selectedVehicle.model} (${selectedVehicle.plate})`,
         service: serviceType,
         notes,
         requestedDate: requestedDate.toISOString(),
@@ -91,7 +91,7 @@ export default function ClientSchedulePage() {
 
     startTransition(async () => {
         try {
-            await createAppointment(validation.data);
+            await createAppointmentRequest(validation.data);
             toast({
                 title: '¡Solicitud Enviada!',
                 description: 'Hemos recibido tu solicitud de cita. Nos pondremos en contacto pronto para confirmar.',
@@ -129,7 +129,7 @@ export default function ClientSchedulePage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             {vehicles.length > 0 ? (
-                                                vehicles.map(v => <SelectItem key={v.id} value={v.id}>{`${v.make} ${v.model} (${v.licensePlate})`}</SelectItem>)
+                                                vehicles.map(v => <SelectItem key={v.id} value={v.id}>{`${v.brand} ${v.model} (${v.plate})`}</SelectItem>)
                                             ) : (
                                                 <SelectItem value="none" disabled>No tienes vehículos registrados</SelectItem>
                                             )}

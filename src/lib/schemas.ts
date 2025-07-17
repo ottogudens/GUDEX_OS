@@ -171,7 +171,7 @@ export const AppointmentRequestSchema = z.object({
     customerName: z.string(),
     customerEmail: z.string().email(),
     vehicleId: z.string().min(1, "Debes seleccionar un vehículo."),
-    vehicleDescription: z.string(),
+    vehicleIdentifier: z.string(),
     service: z.string().min(1, "Debes seleccionar un servicio."),
     notes: z.string().optional(),
     requestedDate: z.string().datetime({ message: "La fecha y hora son requeridas." }),

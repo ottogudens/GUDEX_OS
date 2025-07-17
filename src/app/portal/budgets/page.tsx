@@ -1,12 +1,9 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useTransition } from 'react';
+import { useAuth } from '@/context/AuthContext';
 import { AuthGuard } from '@/components/AuthGuard';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { CheckCircle, MessageSquare, FileText, PlusCircle } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,175 +13,181 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+} from '@/components/ui/alert-dialog';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
+import { FileText, CheckCircle, XCircle, Clock, PlusCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/context/AuthContext';
-import { fetchVehiclesByCustomerId, fetchServices, fetchProducts } from '@/lib/data';
-import { createBudgetRequest } from '@/lib/mutations'; // Assuming you will create this mutation function
-import type { Vehicle, Service, Product } from '@/lib/types';
-import { useTransition } from 'react';
-
-
-type Budget = {
-    id: string;
-    service: string;
-    total: number;
-    status: 'Esperando Aprobación' | 'Aprobado' | 'Rechazado';
-    createdAt: string; // Use createdAt instead of date
-    vehicleId: string;
-    requestedItemId?: string; // Optional if custom description is used
-    requestedItemType?: 'service' | 'product'; // Optional
-    description?: string; // For manual description
-};
+import { fetchBudgetsByCustomerId, updateBudgetStatus } from '@/lib/data';
+import type { Budget } from '@/lib/types';
+import { formatCurrency, cn } from '@/lib/utils';
+import { format, parseISO } from 'date-fns';
+import { es } from 'date-fns/locale';
+import Link from 'next/link';
 
 export default function ClientBudgetsPage() {
-    const [budgets, setBudgets] = useState<Budget[]>([]);
-    const { toast } = useToast();
-    const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [budgets, setBudgets] = useState<Budget[]>([]);
 
-    const { user } = useAuth();
-    const [customerVehicles, setCustomerVehicles] = useState<Vehicle[]>([]);
-    const [availableItems, setAvailableItems] = useState<(Service | Product)[]>([]);
-    const [loadingData, setLoadingData] = useState(true);
-    const [isPending, startTransition] = useTransition();
-    const [requestFormData, setRequestFormData] = useState({ vehicleId: '', requestedItem: '', description: '' });
-
-    const handleApprove = (id: string) => {
-        setBudgets(prev => prev.map(b => b.id === id ? { ...b, status: 'Aprobado' } : b));
-    };
-
-    const getStatusVariant = (status: string) => {
-        switch (status) {
-            case 'Aprobado':
-                return 'secondary';
-            case 'Esperando Aprobación':
-                return 'default';
-            case 'Rechazado':
-                return 'destructive';
-            default:
-                return 'outline';
-        }
-    };
-    
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
-    }
-    
-    const handleRequestSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        // Here you would typically handle form submission, e.g., send data to your backend.
+  const loadBudgets = () => {
+    if (!user?.id) return;
+    startTransition(async () => {
+      try {
+        const fetchedBudgets = await fetchBudgetsByCustomerId(user.id);
+        setBudgets(fetchedBudgets);
+      } catch (error) {
+        console.error("Error fetching budgets:", error);
         toast({
-            title: "Solicitud Enviada",
-            description: "Hemos recibido tu solicitud de presupuesto. Nos pondremos en contacto pronto.",
+          variant: 'destructive',
+          title: 'Error',
+          description: 'No se pudieron cargar tus presupuestos.',
         });
-        setIsRequestDialogOpen(false); // Close the dialog
-    };
+      }
+    });
+  };
+
+  useEffect(() => {
+    loadBudgets();
+  }, [user]);
+
+  const handleApprove = async (budgetId: string) => {
+    try {
+      await updateBudgetStatus(budgetId, 'Aprobado');
+      toast({
+        title: 'Presupuesto Aprobado',
+        description: 'Hemos notificado al taller. Pronto se pondrán en contacto contigo.',
+      });
+      loadBudgets();
+    } catch (error) {
+      console.error("Error approving budget:", error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No se pudo aprobar el presupuesto.',
+      });
+    }
+  };
+
+  const getStatusInfo = (status: Budget['status']) => {
+    switch (status) {
+      case 'Aprobado':
+        return {
+          icon: <CheckCircle className="w-5 h-5 text-green-500" />,
+          text: 'Aprobado',
+          variant: 'secondary',
+          className: 'bg-green-100 text-green-800 border-green-200',
+        };
+      case 'Rechazado':
+        return {
+          icon: <XCircle className="w-5 h-5 text-red-500" />,
+          text: 'Rechazado',
+          variant: 'destructive',
+          className: 'bg-red-100 text-red-800 border-red-200',
+        };
+      case 'Pendiente':
+      default:
+        return {
+          icon: <Clock className="w-5 h-5 text-yellow-500" />,
+          text: 'Pendiente de Aprobación',
+          variant: 'default',
+          className: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+        };
+    }
+  };
 
   return (
     <AuthGuard allowedRoles={['Cliente']}>
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <div>
-                    <h1 className="text-3xl font-bold">Mis Presupuestos</h1>
-                    <p className="text-muted-foreground">Revisa, aprueba o consulta sobre los presupuestos de tus servicios.</p>
-                </div>
-                 <Dialog open={isRequestDialogOpen} onOpenChange={setIsRequestDialogOpen}>
-                    <DialogTrigger asChild>
-                        <Button>
-                            <PlusCircle className="mr-2 h-4 w-4" />
-                            Solicitar Presupuesto
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Solicitar Nuevo Presupuesto</DialogTitle>
-                            <DialogDescription>
-                                Describe el servicio que necesitas y te enviaremos una cotización.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <form onSubmit={handleRequestSubmit}>
-                            <div className="grid gap-4 py-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="vehicle">Vehículo</Label>
-                                    <Select>
-                                        <SelectTrigger id="vehicle">
-                                            <SelectValue placeholder="Selecciona tu vehículo" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="none">No tienes vehículos</SelectItem>
-                                            {/* Real vehicle data would be mapped here */}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="service">Servicio Deseado</Label>
-                                    <Select>
-                                        <SelectTrigger id="service">
-                                            <SelectValue placeholder="Selecciona un servicio" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="cambio-aceite">Cambio de Aceite</SelectItem>
-                                            <SelectItem value="revision-frenos">Revisión de Frenos</SelectItem>
-                                            <SelectItem value="diagnostico">Diagnóstico General</SelectItem>
-                                            <SelectItem value="otro">Otro (describir abajo)</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="notes">Descripción del Problema o Necesidad</Label>
-                                    <Textarea id="notes" placeholder="Ej: El auto hace un ruido extraño al frenar..." />
-                                </div>
-                                <Button type="submit" className="w-full">Enviar Solicitud</Button>
-                            </div>
-                        </form>
-                    </DialogContent>
-                </Dialog>
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 className="text-3xl font-bold">Mis Presupuestos</h1>
+                <p className="text-muted-foreground">Consulta, aprueba o rechaza las cotizaciones de servicios.</p>
             </div>
-            
-            {budgets.length > 0 ? (
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {budgets.map((budget) => (
+            <Button asChild>
+                <Link href="/portal/budgets/request">
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    Solicitar Nuevo Presupuesto
+                </Link>
+            </Button>
+        </div>
+        
+        <Separator />
+
+        {isPending ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                </CardContent>
+                <CardFooter>
+                  <Skeleton className="h-10 w-24" />
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        ) : budgets.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+                {budgets.map((budget) => {
+                    const statusInfo = getStatusInfo(budget.status);
+                    return (
                         <Card key={budget.id} className="flex flex-col">
                             <CardHeader>
-                                <div className="flex justify-between items-center">
-                                    <CardTitle>{budget.service}</CardTitle>
-                                    <Badge variant={getStatusVariant(budget.status)}>{budget.status}</Badge>
-                                </div>
+                                <CardTitle className="flex items-center justify-between">
+                                    <span>{budget.vehicleIdentifier}</span>
+                                    <Badge variant={statusInfo.variant} className={cn("text-xs", statusInfo.className)}>
+                                        {statusInfo.icon}
+                                        <span className="ml-1">{statusInfo.text}</span>
+                                    </Badge>
+                                </CardTitle>
                                 <CardDescription>
-                                    #{budget.id} &bull; Fecha: {budget.date}
+                                    Emitido el {format(parseISO(budget.createdAt.toDate().toISOString()), 'd MMMM, yyyy', { locale: es })}
                                 </CardDescription>
                             </CardHeader>
-                            <CardContent className="flex-1">
-                                <p className="text-3xl font-bold">{formatCurrency(budget.total)}</p>
+                            <CardContent className="flex-grow space-y-4">
+                                <ul className="space-y-2 text-sm">
+                                {budget.items.map((item, index) => (
+                                    <li key={index} className="flex justify-between">
+                                        <span>{item.description} (x{item.quantity})</span>
+                                        <span className="font-medium">{formatCurrency(item.price * item.quantity)}</span>
+                                    </li>
+                                ))}
+                                </ul>
+                                <Separator />
+                                <div className="flex justify-between font-bold text-lg">
+                                    <span>Total</span>
+                                    <span>{formatCurrency(budget.total)}</span>
+                                </div>
                             </CardContent>
-                            <CardFooter className="flex justify-between">
-                                <Button variant="ghost">
-                                    <MessageSquare className="mr-2 h-4 w-4" /> Consultar
-                                </Button>
-                                {budget.status === 'Esperando Aprobación' && (
+                            <CardFooter className="bg-muted/50 p-4">
+                                {budget.status === 'Pendiente' && (
                                     <AlertDialog>
                                         <AlertDialogTrigger asChild>
-                                            <Button>
-                                                <CheckCircle className="mr-2 h-4 w-4" /> Aprobar
-                                            </Button>
+                                            <Button className="w-full">Aprobar Presupuesto</Button>
                                         </AlertDialogTrigger>
                                         <AlertDialogContent>
                                             <AlertDialogHeader>
-                                                <AlertDialogTitle>¿Confirmas la aprobación?</AlertDialogTitle>
+                                                <AlertDialogTitle>Confirmar Aprobación</AlertDialogTitle>
                                                 <AlertDialogDescription>
-                                                    Se aprobará el presupuesto para "{budget.service}" por un total de {formatCurrency(budget.total)}. Un asesor se pondrá en contacto para coordinar el servicio.
+                                                    Se aprobará el presupuesto para "{budget.vehicleIdentifier}" por un total de {formatCurrency(budget.total)}. Un asesor se pondrá en contacto para coordinar el servicio.
                                                 </AlertDialogDescription>
                                             </AlertDialogHeader>
                                             <AlertDialogFooter>
@@ -196,16 +199,17 @@ export default function ClientBudgetsPage() {
                                 )}
                             </CardFooter>
                         </Card>
-                    ))}
-                </div>
-             ) : (
-                <div className="flex flex-col items-center justify-center text-center border-2 border-dashed rounded-lg p-12 mt-8">
-                    <FileText className="w-12 h-12 text-muted-foreground" />
-                    <h2 className="mt-4 text-xl font-semibold">Sin Presupuestos</h2>
-                    <p className="mt-2 text-muted-foreground">Aún no tienes presupuestos generados. Cuando solicites uno, aparecerá aquí.</p>
-                </div>
-            )}
-        </div>
+                    );
+                })}
+            </div>
+         ) : (
+            <div className="flex flex-col items-center justify-center text-center border-2 border-dashed rounded-lg p-12 mt-8">
+                <FileText className="w-12 h-12 text-muted-foreground" />
+                <h2 className="mt-4 text-xl font-semibold">Sin Presupuestos</h2>
+                <p className="mt-2 text-muted-foreground">Aún no tienes presupuestos generados. Cuando solicites uno, aparecerá aquí.</p>
+            </div>
+        )}
+      </div>
     </AuthGuard>
   );
 }

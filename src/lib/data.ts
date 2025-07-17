@@ -18,10 +18,11 @@ import {
   startOfMonth,
   endOfMonth,
   getCountFromServer,
+  deleteDoc,
 } from 'firebase/firestore';
 import { unstable_noStore as noStore } from 'next/cache';
 import { db } from './firebase';
-import type { Customer, Service, ServiceHistory, User, Vehicle, Product, WorkshopSettings, ServiceCategory, Camera, WorkOrder, Receipt, DashboardData, Sale, SalesSummaryData, BestSeller, CashRegisterSession, CashMovement, ProductCategory, EmailSettings, SentEmail, EmailLog, StockLog, Provider } from './types';
+import type { Customer, Service, ServiceHistory, User, Vehicle, Product, WorkshopSettings, ServiceCategory, Camera, WorkOrder, Receipt, DashboardData, Sale, SalesSummaryData, BestSeller, CashRegisterSession, CashMovement, ProductCategory, EmailSettings, SentEmail, EmailLog, StockLog, Provider, Budget, Appointment, BudgetRequest } from './types';
 import { subMonths, format, startOfDay } from 'date-fns';
 
 // NOTE: For these functions to work, you must create the necessary collections
@@ -227,6 +228,7 @@ export async function fetchUsers(): Promise<User[]> {
 
 export async function fetchCustomerById(id: string): Promise<Customer | undefined> {
     noStore();
+    if (!id) return undefined;
     try {
         const customerDocRef = doc(db, 'customers', id);
         const customerDoc = await getDoc(customerDocRef);
@@ -240,7 +242,23 @@ export async function fetchCustomerById(id: string): Promise<Customer | undefine
     }
 }
 
-export async function fetchVehiclesByCustomerId(customerId: string): Promise<Vehicle[]> {
+export async function fetchVehicleById(id: string): Promise<Vehicle | undefined> {
+    noStore();
+    if (!id) return undefined;
+    try {
+        const vehicleDocRef = doc(db, 'vehicles', id);
+        const vehicleDoc = await getDoc(vehicleDocRef);
+        if (!vehicleDoc.exists()) {
+            return undefined;
+        }
+        return { id: vehicleDoc.id, ...vehicleDoc.data() } as Vehicle;
+    } catch (error) {
+        console.error('Error fetching vehicle by ID:', error);
+        return undefined;
+    }
+}
+
+export async function fetchVehiclesByCustomer(customerId: string): Promise<Vehicle[]> {
     noStore();
     try {
         const vehiclesRef = collection(db, 'vehicles');
@@ -791,4 +809,81 @@ export async function fetchProviders(): Promise<Provider[]> {
         console.error('Error fetching providers:', error);
         return [];
     }
+}
+
+export async function fetchBudgets(): Promise<Budget[]> {
+    noStore();
+    try {
+        const budgetsCol = collection(db, 'budgets');
+        const q = query(budgetsCol, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+        const list = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+        })) as Budget[];
+        return list;
+    } catch (error) {
+        console.error('Error fetching budgets:', error);
+        return [];
+    }
+}
+
+export async function fetchBudgetRequests(): Promise<BudgetRequest[]> {
+    noStore();
+    try {
+        const requestsCol = collection(db, 'budgetRequests');
+        const q = query(requestsCol, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+        const list = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+        })) as BudgetRequest[];
+        return list;
+    } catch (error) {
+        console.error('Error fetching budget requests:', error);
+        return [];
+    }
+}
+
+export async function deleteBudget(id: string): Promise<void> {
+    try {
+        await deleteDoc(doc(db, 'budgets', id));
+    } catch (error) {
+        console.error("Error deleting budget:", error);
+        throw new Error("No se pudo eliminar el presupuesto.");
+    }
+}
+
+export async function deleteBudgetRequest(id: string): Promise<void> {
+    try {
+        await deleteDoc(doc(db, 'budgetRequests', id));
+    } catch (error) {
+        console.error("Error deleting budget request:", error);
+        throw new Error("No se pudo eliminar la solicitud de presupuesto.");
+    }
+}
+
+export async function fetchBudgetsByCustomerId(customerId: string): Promise<Budget[]> {
+    noStore();
+    try {
+        const budgetsCol = collection(db, 'budgets');
+        const q = query(budgetsCol, where('customerId', '==', customerId), orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+        const list = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+        })) as Budget[];
+        return list;
+    } catch (error) {
+        console.error('Error fetching budgets by customer:', error);
+        return [];
+    }
+}
+
+export async function updateBudgetStatus(budgetId: string, status: 'Aprobado' | 'Rechazado') {
+  const budgetRef = doc(db, 'budgets', budgetId);
+  await updateDoc(budgetRef, {
+    status: status,
+    updatedAt: serverTimestamp(),
+  });
 }

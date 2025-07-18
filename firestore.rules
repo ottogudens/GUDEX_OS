@@ -98,7 +98,7 @@ service cloud.firestore {
     // Stock Logs
     match /stockLogs/{logId} {
         allow create: if isStaff(); // Mechanics and Admins can create logs via stock take
-        allow read, update, delete: if isAdmin();
+        allow read: if isStaff(); // Allow Staff to read stock logs for reporting/viewing history
     }
     
     // Workshop operations

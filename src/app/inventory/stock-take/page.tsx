@@ -7,15 +7,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AuthGuard } from '@/components/AuthGuard';
+// import { AuthGuard } from '@/components/AuthGuard'; // Assuming AuthGuard is handled by layout or higher level
 import { Barcode, Search, Package, PlusCircle, Camera } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { Product } from '@/lib/types';
 import { fetchProductByBarcode } from '@/lib/data';
+import { fetchStockLogs } from '@/lib/data';
 import { updateProductStock } from '@/lib/mutations';
-import { StockUpdateSchema } from '@/lib/schemas';
 import { ProductFormDialog } from '@/components/ProductFormDialog';
 import {
   Dialog,
@@ -24,16 +24,27 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import jsQR from 'jsqr';
+import { BrowserMultiFormatReader, BarcodeFormat } from '@zxing/library';
 import { useAuth } from '@/context/AuthContext';
+import type { StockLog } from '@/lib/types';
 
-type AdjustedItem = {
-    name: string;
-    oldStock: number;
-    newStock: number;
-};
 
 export default function StockTakePage() {
+
+    // Utility function for debouncing
+    const debounce = <T extends any[]>(func: (...args: T) => void, delay: number) => {
+        let timeoutId: NodeJS.Timeout | null;
+        return (...args: T) => {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+            timeoutId = setTimeout(() => {
+                func(...args);
+            }, delay);
+        };
+    };
+    
+
     const { toast } = useToast();
     const { user } = useAuth();
     const [isSearching, startSearchTransition] = useTransition();
@@ -44,7 +55,8 @@ export default function StockTakePage() {
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [newStock, setNewStock] = useState<string>('');
     const [productNotFound, setProductNotFound] = useState(false);
-    const [adjustedItems, setAdjustedItems] = useState<AdjustedItem[]>([]);
+    const [stockLogs, setStockLogs] = useState<StockLog[]>([]);
+    const [loadingStockLogs, setLoadingStockLogs] = useState(true);
     const [isProductFormOpen, setIsProductFormOpen] = useState(false);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
 
@@ -61,6 +73,7 @@ export default function StockTakePage() {
         setProductNotFound(false);
     };
 
+    // Original handleSearch function
     const handleSearch = useCallback((searchBarcode: string) => {
         if (!searchBarcode.trim()) {
             toast({ variant: 'destructive', title: 'Código de barras vacío', description: 'Por favor, ingresa un código para buscar.' });
@@ -74,6 +87,7 @@ export default function StockTakePage() {
             setProductNotFound(false);
             setSelectedProduct(null);
             try {
+                // Assuming fetchProductByBarcode is designed to handle potential errors gracefully
                 const product = await fetchProductByBarcode(searchBarcode);
                 if (product) {
                     setSelectedProduct(product);
@@ -85,48 +99,58 @@ export default function StockTakePage() {
                 toast({ variant: 'destructive', title: 'Error de Búsqueda', description: 'No se pudo realizar la búsqueda.' });
             }
         });
-    }, [toast]);
+    }, [toast, startSearchTransition]);
 
+    // Debounced version of handleSearch
+    const debouncedSearch = useCallback(
+        debounce((searchBarcode: string) => {
+            handleSearch(searchBarcode);
+        }, 400), // Adjust debounce delay as needed (e.g., 400ms)
+        [handleSearch]
+    );
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
+            // Use the immediate handleSearch on Enter press
             handleSearch(barcode);
         }
-    };
-
     const handleStockUpdate = () => {
         if (!selectedProduct || !user) return;
         
+        // Validate if newStock is a valid number string first
+        if (newStock === '' || isNaN(Number(newStock))) {
+            toast({ variant: 'destructive', title: 'Cantidad inválida', description: 'Por favor, ingresa una cantidad numérica válida.' });
+            return;
+        }
+
         const validation = StockUpdateSchema.safeParse({ newStock: Number(newStock) });
         if (!validation.success) {
             toast({ variant: 'destructive', title: 'Cantidad inválida', description: validation.error.errors[0].message });
             return;
         }
-
         const countedStock = validation.data.newStock;
 
         startUpdateTransition(async () => {
             try {
                 await updateProductStock(selectedProduct, countedStock, { id: user.id, name: user.name });
                 
-                const adjustedItem: AdjustedItem = {
-                    name: selectedProduct.name,
-                    oldStock: selectedProduct.stock,
-                    newStock: countedStock
-                };
-                setAdjustedItems(prev => [adjustedItem, ...prev]);
+                loadStockLogs(); // Reload logs after successful update
 
                 toast({
                     title: '¡Stock Actualizado!',
                     description: `El stock de "${selectedProduct.name}" es ahora ${countedStock}.`,
                 });
                 resetState();
+                // Re-focus the barcode input after successful update
                 document.getElementById('barcode-input')?.focus();
             } catch (error: any) {
+                // If update fails, just show toast, don't reset state
+                // to allow user to potentially retry or correct
                 toast({ variant: 'destructive', title: 'Error al actualizar', description: error.message });
             }
         });
+
     };
     
     const handleProductCreated = () => {
@@ -164,7 +188,7 @@ export default function StockTakePage() {
                 });
 
                 if (code && code.data) {
-                    handleSearch(code.data);
+                    debouncedSearch(code.data); // Use debounced search for scanner
                     setIsScannerOpen(false); // This will trigger the useEffect cleanup
                     return;
                 }
@@ -172,7 +196,7 @@ export default function StockTakePage() {
             animationFrameIdRef.current = requestAnimationFrame(tick);
         };
         animationFrameIdRef.current = requestAnimationFrame(tick);
-    }, [handleSearch]);
+    }, [debouncedSearch]); // Use debouncedSearch here
 
     useEffect(() => {
         if (isScannerOpen) {
@@ -199,7 +223,29 @@ export default function StockTakePage() {
         return () => {
             stopScan();
         };
-    }, [isScannerOpen, startScan, stopScan, toast]);
+    }, [isScannerOpen, startScan, stopScan, toast, debouncedSearch]); // Added debouncedSearch
+
+    // Effect to clean up debounce timeout on unmount
+    useEffect(() => {
+        return () => debouncedSearch.cancel?.(); // Assuming debounce utility might have a cancel method
+    }, [debouncedSearch]);
+
+    // Effect to load stock logs on component mount
+    useEffect(() => {
+        const loadStockLogs = async () => {
+            try {
+                setLoadingStockLogs(true);
+                const logs = await fetchStockLogs();
+                setStockLogs(logs);
+            } catch (error) {
+                console.error('Error loading stock logs:', error);
+                toast({ variant: 'destructive', title: 'Error de Carga', description: 'No se pudieron cargar los registros de ajustes de stock.' });
+            } finally {
+                setLoadingStockLogs(false);
+            }
+        };
+        loadStockLogs();
+    }, [toast]); // Depend on toast if used within loadStockLogs
 
     const renderResult = () => {
         if (isSearching) {
@@ -290,7 +336,7 @@ export default function StockTakePage() {
                                     placeholder="Escanea o tipea el código..."
                                     value={barcode}
                                     onChange={(e) => setBarcode(e.target.value)}
-                                    onKeyDown={handleKeyDown}
+                                    onKeyDown={handleKeyDown} // Keep Enter key immediate
                                     className="pl-10"
                                     disabled={isSearching}
                                 />

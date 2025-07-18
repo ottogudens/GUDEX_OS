@@ -25,8 +25,8 @@ import {
 } from '@/components/ui/chart';
 import { AuthGuard } from '@/components/AuthGuard';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fetchDashboardData } from '@/lib/data';
-import type { DashboardData } from '@/lib/types';
+import { fetchDashboardData, fetchUpcomingAppointmentsForDashboard } from '@/lib/data';
+import type { DashboardData, AppointmentRequest, Appointment } from '@/lib/types';
 
 const chartConfig = {
   revenue: {
@@ -86,6 +86,11 @@ const StatCard = ({ title, value, icon, description, loading }: { title: string,
 export default function DashboardPage() {
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [appointmentsData, setAppointmentsData] = useState<{
+      pendingRequests: AppointmentRequest[];
+      confirmedAppointments: Appointment[];
+    } | null>(null);
+    const [loadingAppointments, setLoadingAppointments] = useState(true);
 
     useEffect(() => {
         const loadData = async () => {
@@ -94,7 +99,15 @@ export default function DashboardPage() {
             setData(dashboardData);
             setLoading(false);
         };
+
+        const loadAppointments = async () => {
+          setLoadingAppointments(true);
+          const appointments = await fetchUpcomingAppointmentsForDashboard();
+          setAppointmentsData(appointments);
+          setLoadingAppointments(false);
+        };
         loadData();
+        loadAppointments();
     }, []);
     
     const formatCurrency = (amount: number) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
@@ -222,6 +235,103 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Citas Pendientes de Confirmación</CardTitle>
+              <CardDescription>
+                Solicitudes de cita de clientes que aún no han sido confirmadas.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Solicitud</TableHead>
+                    <TableHead>Fecha Solicitada</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loadingAppointments ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <TableRow key={i}>
+                          <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                          <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                          <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                      </TableRow>
+                   ))
+                  ) : (
+                    appointmentsData?.pendingRequests.map((request) => (
+                      <TableRow key={request.id}>
+                        <TableCell>{request.customerName}</TableCell>
+                        <TableCell>{request.notes || 'Sin detalles'}</TableCell>
+                        <TableCell>{new Date(request.requestedDate).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                  {!loadingAppointments && appointmentsData && appointmentsData.pendingRequests.length === 0 && (
+                     <TableRow>
+                      <TableCell colSpan={3} className="text-center h-12 text-muted-foreground">
+                        No hay solicitudes de cita pendientes.
+                      </TableCell>
+                    </TableRow>
+                   )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+          <Card>
+             <CardHeader>
+              <CardTitle>Próximas Citas Confirmadas</CardTitle>
+              <CardDescription>
+                Citas agendadas para los próximos días.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Vehículo</TableHead>
+                    <TableHead>Servicio</TableHead>
+                     <TableHead>Fecha y Hora</TableHead>
+                  </TableRow>
+                </TableHeader>
+                 <TableBody>
+                   {loadingAppointments ? (
+                      Array.from({ length: 3 }).map((_, i) => (
+                        <TableRow key={i}>
+                            <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                            <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                            <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                             <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                        </TableRow>
+                     ))
+                   ) : (
+                    appointmentsData?.confirmedAppointments.map((appointment) => (
+                      <TableRow key={appointment.id}>
+                        <TableCell>{appointment.customerName}</TableCell>
+                        <TableCell>{appointment.vehicleDescription}</TableCell>
+                        <TableCell>{appointment.service}</TableCell>
+                         <TableCell>{new Date(appointment.appointmentDate).toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                   {!loadingAppointments && appointmentsData && appointmentsData.confirmedAppointments.length === 0 && (
+                     <TableRow>
+                      <TableCell colSpan={4} className="text-center h-12 text-muted-foreground">
+                        No hay citas confirmadas próximamente.
+                      </TableCell>
+                    </TableRow>
+                   )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
+
       </div>
     </AuthGuard>
   );

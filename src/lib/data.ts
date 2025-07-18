@@ -20,7 +20,7 @@ import {
   getCountFromServer,
   deleteDoc,
 } from 'firebase/firestore';
-import { unstable_noStore as noStore } from 'next/cache';
+import { unstable_noStore as noStore, revalidatePath } from 'next/cache';
 import { db } from './firebase';
 import type { Customer, Service, ServiceHistory, User, Vehicle, Product, WorkshopSettings, ServiceCategory, Camera, WorkOrder, Receipt, DashboardData, Sale, SalesSummaryData, BestSeller, CashRegisterSession, CashMovement, ProductCategory, EmailSettings, SentEmail, EmailLog, StockLog, Provider, Budget, Appointment, BudgetRequest } from './types';
 import { subMonths, format, startOfDay } from 'date-fns';

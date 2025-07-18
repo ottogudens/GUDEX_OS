@@ -188,6 +188,8 @@ export type DashboardData = {
   newCustomersThisMonth: number;
   monthlyRevenue: { month: string; revenue: number }[];
   recentActivity: RecentActivity[];
+  pendingAppointments: AppointmentRequest[];
+  confirmedAppointments: Appointment[];
 };
 
 export type BestSeller = {

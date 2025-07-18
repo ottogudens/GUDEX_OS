@@ -74,7 +74,7 @@ export async function updateProductStock(product: Product, newStock: number, use
     batch.update(productRef, { stock: newStock });
 
     const logRef = doc(collection(db, 'stockLogs'));
-    batch.set(logRef, {
+    batch.set(logRef, { // This is already creating a log document
         productId: product.id,
         productName: product.name,
         oldStock: product.stock,

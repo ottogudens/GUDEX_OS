@@ -9,7 +9,7 @@ const MOBILE_BREAKPOINT = 768; // Corresponds to md breakpoint in Tailwind
  * A custom hook to determine if the current viewport is a mobile device.
  * @returns {boolean} True if the screen width is less than the mobile breakpoint.
  */
-export function useMobile(): boolean {
+export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {

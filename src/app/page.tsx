@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
-import { Car, CircleDollarSign, Users, Wrench } from 'lucide-react';
+import { useEffect, useState, useTransition } from 'react';
+import { AreaChart, BadgeCheck, Car, CircleDollarSign, Clock, Users, Wrench } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Table,
@@ -27,11 +27,15 @@ import { AuthGuard } from '@/components/AuthGuard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { fetchDashboardData, fetchUpcomingAppointmentsForDashboard } from '@/lib/data';
 import type { DashboardData, AppointmentRequest, Appointment } from '@/lib/types';
+import { format, isToday, isYesterday } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 const chartConfig = {
   revenue: {
     label: 'Ingresos',
-    color: 'hsl(var(--accent))',
+    color: 'hsl(var(--chart-1))',
   },
 };
 
@@ -59,10 +63,10 @@ const getStatusText = (status: string) => {
         paid: 'Pagado'
     };
     return map[status] || status;
-}
+};
 
-const StatCard = ({ title, value, icon, description, loading }: { title: string, value: string, icon: React.ReactNode, description: string, loading: boolean }) => (
-    <Card>
+const StatCard = ({ title, value, icon, description, loading, colorClass }: { title: string, value: string, icon: React.ReactNode, description: string, loading: boolean, colorClass?: string }) => (
+    <Card className={cn("transition-all hover:shadow-md", colorClass)}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{title}</CardTitle>
             {icon}
@@ -70,8 +74,8 @@ const StatCard = ({ title, value, icon, description, loading }: { title: string,
         <CardContent>
             {loading ? (
                 <>
-                    <Skeleton className="h-8 w-3/4 mt-1" />
-                    <Skeleton className="h-4 w-1/2 mt-2" />
+                    <Skeleton className="mt-1 h-8 w-3/4" />
+                    <Skeleton className="mt-2 h-4 w-1/2" />
                 </>
             ) : (
                 <>
@@ -91,86 +95,129 @@ export default function DashboardPage() {
       confirmedAppointments: Appointment[];
     } | null>(null);
     const [loadingAppointments, setLoadingAppointments] = useState(true);
+    const [isPending, startTransition] = useTransition();
+    const { toast } = useToast();
+
+    const loadData = () => {
+        startTransition(async () => {
+            try {
+                setLoading(true);
+                const dashboardData = await fetchDashboardData();
+                setData(dashboardData);
+            } catch (error) {
+                console.error("Failed to load dashboard data", error);
+                toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos del panel.' });
+            } finally {
+                setLoading(false);
+            }
+        });
+    };
+
+    const loadAppointments = () => {
+        startTransition(async () => {
+            try {
+                setLoadingAppointments(true);
+                const appointments = await fetchUpcomingAppointmentsForDashboard();
+                setAppointmentsData(appointments);
+            } catch (error) {
+                console.error("Failed to load appointments data", error);
+                toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar las citas.' });
+            } finally {
+                setLoadingAppointments(false);
+            }
+        });
+    };
 
     useEffect(() => {
-        const loadData = async () => {
-            setLoading(true);
-            const dashboardData = await fetchDashboardData();
-            setData(dashboardData);
-            setLoading(false);
-        };
-
-        const loadAppointments = async () => {
-          setLoadingAppointments(true);
-          const appointments = await fetchUpcomingAppointmentsForDashboard();
-          setAppointmentsData(appointments);
-          setLoadingAppointments(false);
-        };
         loadData();
         loadAppointments();
     }, []);
     
     const formatCurrency = (amount: number) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 
+    const formatDateForTable = (dateStr: string) => {
+        const date = new Date(dateStr);
+        if (isToday(date)) return "Hoy";
+        if (isYesterday(date)) return "Ayer";
+        return format(date, "P", { locale: es });
+    };
+    
+    const formatDateTimeForTable = (dateStr: string) => {
+        const date = new Date(dateStr);
+        return format(date, "P p", { locale: es });
+    };
+
     return (
     <AuthGuard allowedRoles={['Administrador', 'Mecanico']}>
-      <div className="flex flex-col gap-8">
+      <div className="flex animate-fade-in-up flex-col gap-8">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            title="Ingresos Totales"
-            value={data ? formatCurrency(data.totalRevenue) : '$0'}
-            icon={<CircleDollarSign className="h-4 w-4 text-muted-foreground" />}
-            description="Desde el inicio"
+            title="Ingresos Caja Activa"
+            value={data ? formatCurrency(data.activeCashRegisterRevenue) : '$0'}
+            icon={<CircleDollarSign className="h-4 w-4 text-green-500" />}
+            description="Ventas de la sesión actual"
             loading={loading}
+            colorClass="hover:border-green-500/50"
           />
           <StatCard
             title="Órdenes Activas"
             value={data ? data.activeOrders.toString() : '0'}
-            icon={<Wrench className="h-4 w-4 text-muted-foreground" />}
+            icon={<Wrench className="h-4 w-4 text-blue-500" />}
             description="Pendientes, en progreso o aprobación"
             loading={loading}
+            colorClass="hover:border-blue-500/50"
           />
           <StatCard
             title="Completadas este Mes"
             value={data ? data.completedThisMonth.toString() : '0'}
-            icon={<Car className="h-4 w-4 text-muted-foreground" />}
+            icon={<BadgeCheck className="h-4 w-4 text-indigo-500" />}
             description="Ventas en los últimos 30 días"
             loading={loading}
+            colorClass="hover:border-indigo-500/50"
           />
            <StatCard
             title="Nuevos Clientes"
             value={data ? data.newCustomersThisMonth.toString() : '0'}
-            icon={<Users className="h-4 w-4 text-muted-foreground" />}
+            icon={<Users className="h-4 w-4 text-orange-500" />}
             description="En los últimos 30 días"
             loading={loading}
+            colorClass="hover:border-orange-500/50"
           />
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
           <Card className="lg:col-span-4">
             <CardHeader>
-              <CardTitle>Resumen de Ingresos (Últimos 6 meses)</CardTitle>
+              <CardTitle className="flex items-center gap-2"><AreaChart className="h-5 w-5" /> Resumen de Ingresos (Últimos 6 días)</CardTitle>
             </CardHeader>
             <CardContent className="pl-2">
-              {loading || !data?.monthlyRevenue.length ? (
+              {loading || !data?.dailyRevenue.length ? (
                 <div className="flex min-h-[250px] w-full items-center justify-center">
                     {loading ? <Skeleton className="h-full w-full" /> : <p className="text-muted-foreground">No hay datos de ingresos para mostrar.</p>}
                 </div>
               ) : (
                 <ChartContainer config={chartConfig} className="min-h-[250px] w-full">
-                  <BarChartComponent accessibilityLayer data={data.monthlyRevenue}>
+                  <BarChartComponent accessibilityLayer data={data.dailyRevenue}>
                     <CartesianGrid vertical={false} />
                     <XAxis
-                      dataKey="month"
+                      dataKey="day"
                       tickLine={false}
                       tickMargin={10}
                       axisLine={false}
-                      tickFormatter={(value) => value.slice(0, 3)}
+                      tickFormatter={(value) => format(new Date(value), "EEE", { locale: es })}
                     />
                      <YAxis tickFormatter={(value) => `$${Number(value) / 1000}k`} />
                     <ChartTooltip
                       cursor={false}
-                      content={<ChartTooltipContent indicator="dot" formatter={(value) => formatCurrency(value as number)} />}
+                      content={<ChartTooltipContent 
+                        formatter={(value, name, payload) => (
+                            <div className='flex flex-col'>
+                                <span className='font-semibold'>{format(new Date(payload.payload.day), "eeee, dd MMMM", { locale: es })}</span>
+                                <span>{formatCurrency(value as number)}</span>
+                            </div>
+                        )} 
+                        indicator="dot" 
+                      />}
                     />
                     <Bar
                       dataKey="revenue"
@@ -210,12 +257,15 @@ export default function DashboardPage() {
                   ) : (
                     data.recentActivity.map((activity) => (
                       <TableRow key={activity.id}>
-                        <TableCell className="font-medium font-mono text-xs">#{activity.id}</TableCell>
+                        <TableCell className="font-mono text-xs font-semibold">#{activity.id}</TableCell>
                         <TableCell>{activity.customer}</TableCell>
                         <TableCell>
                           <Badge
                             variant={getStatusVariant(activity.status)}
-                            className={activity.status === 'approval' ? 'bg-accent text-accent-foreground' : ''}
+                            className={cn({
+                              'bg-accent text-accent-foreground': activity.status === 'approval',
+                              'border-primary/50 text-primary': activity.status === 'inProgress'
+                            })}
                           >
                             {getStatusText(activity.status)}
                           </Badge>
@@ -225,7 +275,7 @@ export default function DashboardPage() {
                    )}
                    {!loading && data && data.recentActivity.length === 0 && (
                      <TableRow>
-                      <TableCell colSpan={3} className="text-center h-24 text-muted-foreground">
+                      <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
                         No hay actividad reciente.
                       </TableCell>
                     </TableRow>
@@ -248,6 +298,7 @@ export default function DashboardPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead></TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Solicitud</TableHead>
                     <TableHead>Fecha Solicitada</TableHead>
@@ -257,23 +308,29 @@ export default function DashboardPage() {
                   {loadingAppointments ? (
                     Array.from({ length: 3 }).map((_, i) => (
                       <TableRow key={i}>
+                          <TableCell><Skeleton className="h-5 w-3" /></TableCell>
                           <TableCell><Skeleton className="h-5 w-20" /></TableCell>
                           <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                           <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       </TableRow>
                    ))
                   ) : (
-                    appointmentsData?.pendingRequests.map((request) => (
+                    appointmentsData?.pendingRequests.map((request, index) => (
                       <TableRow key={request.id}>
+                         <TableCell>
+                           {isToday(new Date(request.requestedDate)) && (
+                            <span className="flex h-2 w-2 translate-y-1 rounded-full bg-sky-500" title="Solicitud para hoy" />
+                           )}
+                         </TableCell>
                         <TableCell>{request.customerName}</TableCell>
                         <TableCell>{request.notes || 'Sin detalles'}</TableCell>
-                        <TableCell>{new Date(request.requestedDate).toLocaleDateString()}</TableCell>
+                        <TableCell>{formatDateForTable(request.requestedDate)}</TableCell>
                       </TableRow>
                     ))
                   )}
                   {!loadingAppointments && appointmentsData && appointmentsData.pendingRequests.length === 0 && (
                      <TableRow>
-                      <TableCell colSpan={3} className="text-center h-12 text-muted-foreground">
+                      <TableCell colSpan={4} className="h-12 text-center text-muted-foreground">
                         No hay solicitudes de cita pendientes.
                       </TableCell>
                     </TableRow>
@@ -315,13 +372,13 @@ export default function DashboardPage() {
                         <TableCell>{appointment.customerName}</TableCell>
                         <TableCell>{appointment.vehicleDescription}</TableCell>
                         <TableCell>{appointment.service}</TableCell>
-                         <TableCell>{new Date(appointment.appointmentDate).toLocaleString()}</TableCell>
+                         <TableCell>{formatDateTimeForTable(appointment.appointmentDate)}</TableCell>
                       </TableRow>
                     ))
                   )}
                    {!loadingAppointments && appointmentsData && appointmentsData.confirmedAppointments.length === 0 && (
                      <TableRow>
-                      <TableCell colSpan={4} className="text-center h-12 text-muted-foreground">
+                      <TableCell colSpan={4} className="h-12 text-center text-muted-foreground">
                         No hay citas confirmadas próximamente.
                       </TableCell>
                     </TableRow>

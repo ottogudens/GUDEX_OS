@@ -1,11 +1,10 @@
 
 'use client';
 import { db } from './firebase';
-import { collection, doc, addDoc, setDoc, serverTimestamp, updateDoc, deleteDoc, writeBatch, query, where, getDocs, limit, Timestamp } from 'firebase/firestore';
+import { collection, doc, addDoc, setDoc, serverTimestamp, updateDoc, deleteDoc, writeBatch, query, where, getDocs, limit, Timestamp, runTransaction, increment } from 'firebase/firestore';
 import type { User, Customer, Product, Service, WorkshopSettings, ServiceCategory, ProductCategory, Camera, WorkOrder, Sale, CashMovement, AppointmentRequestFormData, Provider, ProviderPaymentFormData, Budget, BudgetRequest, Appointment } from './types';
-import { ProductFormData, ServiceFormData, ServiceCategoryFormData, ProductCategoryFormData, AddUserFormData, CameraFormData, EmailSettingsSchema, WorkOrderSchema, VehicleSchema, SaleSchema, ProviderSchema, ProviderPaymentSchema } from './schemas';
+import { ProductFormData, ServiceFormData, ServiceCategoryFormData, ProductCategoryFormData, AddUserFormData, CameraFormData, EmailSettingsSchema, WorkOrderSchema, VehicleSchema, SaleSchema, ProviderSchema, ProviderPaymentSchema, PurchaseInvoiceFormData } from './schemas';
 import { z } from 'zod';
-import { closeCashRegister as serverCloseCashRegister } from './server-mutations';
 
 // Generic function to add a document to a collection
 export async function addDocument<T>(collectionName: string, data: T) {
@@ -327,7 +326,7 @@ export async function confirmAppointment(appointmentData: Omit<Appointment, 'id'
 
 
 // Provider Mutations
-export async function createProvider(providerData: Provider) {
+export async function createProvider(providerData: z.infer<typeof ProviderSchema>) {
     return addDocument('providers', providerData);
 }
 
@@ -383,16 +382,96 @@ export async function openCashRegister(initialAmount: number, userId: string, us
     });
 }
 
-export async function closeCashRegister(sessionId: string, finalAmounts: { cash: number; card: number; transfer: number; }, closedBy: { id: string; name: string; }, summary: any) {
-    try {
-        // This function will now act as a client-side wrapper for the server-side mutation.
-        await serverCloseCashRegister({ sessionId, finalAmounts, closedBy, summary });
-    } catch (error) {
-        console.error("Error closing cash register:", error);
-        // Re-throw the error to be caught by the component
-        if (error instanceof Error) {
-            throw new Error(`Failed to close cash register: ${error.message}`);
-        }
-        throw new Error('An unknown error occurred while closing the cash register.');
+interface UserInfo {
+    id: string;
+    name: string;
+}
+
+interface FinalAmounts {
+    cash: number;
+    card: number;
+    transfer: number;
+}
+
+interface CloseCashRegisterParams {
+    sessionId: string;
+    finalAmounts: FinalAmounts;
+    closedBy: UserInfo;
+    summary: {
+        totalSales: number;
+        cashSales: number;
+        cardSales: number;
+        transferSales: number;
+        manualIncome: number;
+        manualExpense: number;
+        expectedInCash: number;
+    };
+}
+
+export async function closeCashRegister(params: CloseCashRegisterParams) {
+    const { sessionId, finalAmounts, closedBy, summary } = params;
+
+    if (!sessionId) {
+        throw new Error("Session ID is required.");
     }
+
+    const sessionRef = doc(db, 'cashRegisterSessions', sessionId);
+
+    try {
+        await updateDoc(sessionRef, {
+            status: 'closed',
+            closedAt: serverTimestamp(),
+            closedBy: closedBy,
+            closingAmount: finalAmounts,
+            expectedAmount: {
+                cash: summary.expectedInCash,
+                card: summary.cardSales,
+                transfer: summary.transferSales,
+            },
+            summary: {
+                totalSales: summary.totalSales,
+                cashSales: summary.cashSales,
+                cardSales: summary.cardSales,
+                transferSales: summary.transferSales,
+                manualIncome: summary.manualIncome,
+                manualExpense: summary.manualExpense,
+            },
+            discrepancy: {
+                cash: finalAmounts.cash - summary.expectedInCash,
+                card: finalAmounts.card - summary.cardSales,
+                transfer: finalAmounts.transfer - summary.transferSales,
+            },
+        });
+    } catch (error) {
+        console.error("Error updating cash register session document:", error);
+        throw new Error(`Failed to update Firestore document: ${error.message}`);
+    }
+}
+
+// Purchase Invoice Mutations
+export async function createPurchaseInvoice(invoiceData: PurchaseInvoiceFormData) {
+    const batch = writeBatch(db);
+
+    // 1. Create the purchase invoice document
+    const invoiceRef = doc(collection(db, "purchaseInvoices"));
+    const totalAmount = invoiceData.items.reduce((acc, item) => acc + (item.quantity * item.purchasePrice), 0);
+    
+    batch.set(invoiceRef, {
+        ...invoiceData,
+        totalAmount,
+        status: 'Pendiente', // or 'Pagada' depending on business logic
+        createdAt: serverTimestamp(),
+    });
+
+    // 2. Update stock and purchase price for each product
+    invoiceData.items.forEach(item => {
+        const productRef = doc(db, 'products', item.productId);
+        batch.update(productRef, {
+            stock: increment(item.quantity),
+            purchasePrice: item.purchasePrice, // Update the purchase price to the latest one
+        });
+    });
+    
+    await batch.commit();
+    return invoiceRef.id;
 }

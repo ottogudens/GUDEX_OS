@@ -181,17 +181,10 @@ export type AppointmentRequestFormData = z.infer<typeof AppointmentRequestSchema
 // Schema for Provider
 export const ProviderSchema = z.object({
   name: z.string().min(1, "El nombre es requerido."),
-  taxId: z.string().min(1, "El número de identificación es requerido."),
-  address: z.string().min(1, "La dirección es requerida."),
+  contactName: z.string().optional(),
   phone: z.string().min(1, "El teléfono es requerido."),
   email: z.string().email("Debe ser un correo electrónico válido."),
-  bank: z.string().min(1, "El banco es requerido."),
-  accountNumber: z.string().min(1, "El número de cuenta es requerido."),
-  paymentTerms: z.string().min(1, "Las condiciones de pago son requeridas."),
-  discounts: z.string().optional(),
-  representativeName: z.string().optional(),
-  representativeEmail: z.string().email("Debe ser un correo electrónico válido.").optional().or(z.literal('')),
-  representativePhone: z.string().optional(),
+  address: z.string().optional(),
 });
 export type ProviderFormData = z.infer<typeof ProviderSchema>;
 
@@ -207,3 +200,16 @@ export const ProviderPaymentSchema = z.object({
     notes: z.string().optional(),
 });
 export type ProviderPaymentFormData = z.infer<typeof ProviderPaymentSchema>;
+
+// Schema for Purchase Invoice
+export const PurchaseInvoiceSchema = z.object({
+  providerId: z.string().min(1, "Debe seleccionar un proveedor."),
+  invoiceNumber: z.string().min(1, "El número de factura es requerido."),
+  date: z.date({ errorMap: () => ({ message: "La fecha de la factura es requerida."}) }),
+  items: z.array(z.object({
+    productId: z.string().min(1, "Debe seleccionar un producto."),
+    quantity: z.coerce.number().int().min(1, "La cantidad debe ser al menos 1."),
+    purchasePrice: z.coerce.number().min(0, "El precio de compra no puede ser negativo."),
+  })).min(1, "Debe agregar al menos un ítem a la factura."),
+});
+export type PurchaseInvoiceFormData = z.infer<typeof PurchaseInvoiceSchema>;

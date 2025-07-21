@@ -45,6 +45,9 @@ export default function CashRegisterPage() {
                 ]);
                 setSales(sessionSales);
                 setMovements(sessionMovements);
+            } else {
+                setSales([]);
+                setMovements([]);
             }
         } catch (error) {
             console.error("Error loading cash register data:", error);
@@ -123,7 +126,7 @@ export default function CashRegisterPage() {
         });
     };
 
-    const handleCloseRegister = () => {
+    const handleCloseRegister = (sessionId: string) => {
         const cash = parseFloat(closingAmounts.cash || '0');
         const card = parseFloat(closingAmounts.card || '0');
         const transfer = parseFloat(closingAmounts.transfer || '0');
@@ -132,17 +135,18 @@ export default function CashRegisterPage() {
             toast({ variant: 'destructive', title: 'Montos inválidos', description: 'Ingresa montos de cierre válidos y no negativos.' });
             return;
         }
-        if (!user || !session || !summary) return;
+        if (!user || !summary) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Falta información de usuario o resumen para cerrar la caja.' });
+            return;
+        }
 
         const finalAmounts = { cash, card, transfer };
 
         startTransition(async () => {
             try {
-                await closeCashRegister(session.id, finalAmounts, { id: user.id, name: user.name }, summary);
+                await closeCashRegister({ sessionId, finalAmounts, closedBy: { id: user.id, name: user.name }, summary });
                 toast({ title: 'Caja Cerrada' });
                 setSession(null);
-                setSales([]);
-                setMovements([]);
                 setClosingAmounts({ cash: '', card: '', transfer: '' });
                 await loadData();
             } catch (error: any) {
@@ -249,7 +253,7 @@ export default function CashRegisterPage() {
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                     <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                    <AlertDialogAction onClick={handleCloseRegister} disabled={isPending}>
+                                    <AlertDialogAction onClick={() => handleCloseRegister(session.id)} disabled={isPending}>
                                         {isPending ? 'Cerrando...' : 'Sí, Cerrar Caja'}
                                     </AlertDialogAction>
                                 </AlertDialogFooter>

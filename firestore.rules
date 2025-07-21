@@ -38,7 +38,7 @@ service cloud.firestore {
     
     function isStaff() {
       let userRole = getUserRole();
-      return isSignedIn() && (userRole == 'Administrador' || userRole == 'Mecanico');
+      return isSignedIn() && (userRole == 'Administrador' || userRole == 'Mecanico' || userRole == 'Cajero');
     }
     
     function isClient() {
@@ -143,13 +143,11 @@ service cloud.firestore {
     }
     
     match /cashRegisterSessions/{sessionId} {
-      // Allow any staff member to open/close the register
-      allow read, write: if isStaff();
+      allow read, write: if isStaff() || (getUserRole() == 'Cajero');
     }
     
     match /cashMovements/{movementId} {
-      // Allow any staff member to add movements to an open session
-      allow read, write: if isStaff();
+      allow read, write: if isStaff() || (getUserRole() == 'Cajero');
     }
 
     // Receipts can be read by clients

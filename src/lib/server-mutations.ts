@@ -66,6 +66,6 @@ export async function closeCashRegister(params: CloseCashRegisterParams) {
         });
     } catch (error) {
         console.error("Error updating cash register session document:", error);
-        throw new Error("Failed to update Firestore document.");
+        throw new Error(`Failed to update Firestore document: ${error.message}`);
     }
 }

@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/chart';
 import { AuthGuard } from '@/components/AuthGuard';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fetchDashboardData, fetchUpcomingAppointmentsForDashboard } from '@/lib/data';
+import { fetchDashboardData, fetchAppointmentRequests, fetchAppointmentsByDate } from '@/lib/data';
 import type { DashboardData, AppointmentRequest, Appointment } from '@/lib/types';
 import { format, isToday, isYesterday } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -117,8 +117,15 @@ export default function DashboardPage() {
         startTransition(async () => {
             try {
                 setLoadingAppointments(true);
-                const appointments = await fetchUpcomingAppointmentsForDashboard();
-                setAppointmentsData(appointments);
+                const pendingRequests = await fetchAppointmentRequests();
+                const todayAppointments = await fetchAppointmentsByDate(new Date());
+                
+                const confirmedAppointments = todayAppointments.sort((a, b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime());
+
+                setAppointmentsData({
+                    pendingRequests,
+                    confirmedAppointments
+                });
             } catch (error) {
                 console.error("Failed to load appointments data", error);
                 toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar las citas.' });
@@ -191,7 +198,7 @@ export default function DashboardPage() {
               <CardTitle className="flex items-center gap-2"><AreaChart className="h-5 w-5" /> Resumen de Ingresos (Últimos 6 días)</CardTitle>
             </CardHeader>
             <CardContent className="pl-2">
-              {loading || !data?.dailyRevenue.length ? (
+              {loading || !data || !data.dailyRevenue || data.dailyRevenue.length === 0 ? (
                 <div className="flex min-h-[250px] w-full items-center justify-center">
                     {loading ? <Skeleton className="h-full w-full" /> : <p className="text-muted-foreground">No hay datos de ingresos para mostrar.</p>}
                 </div>
@@ -246,7 +253,7 @@ export default function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading || !data?.recentActivity.length ? (
+                  {loading || !data?.recentActivity ? (
                      Array.from({ length: 5 }).map((_, i) => (
                         <TableRow key={i}>
                             <TableCell><Skeleton className="h-5 w-16" /></TableCell>
@@ -255,30 +262,31 @@ export default function DashboardPage() {
                         </TableRow>
                      ))
                   ) : (
-                    data.recentActivity.map((activity) => (
-                      <TableRow key={activity.id}>
-                        <TableCell className="font-mono text-xs font-semibold">#{activity.id}</TableCell>
-                        <TableCell>{activity.customer}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={getStatusVariant(activity.status)}
-                            className={cn({
-                              'bg-accent text-accent-foreground': activity.status === 'approval',
-                              'border-primary/50 text-primary': activity.status === 'inProgress'
-                            })}
-                          >
-                            {getStatusText(activity.status)}
-                          </Badge>
+                    data.recentActivity.length > 0 ? (
+                      data.recentActivity.map((activity) => (
+                        <TableRow key={activity.id}>
+                          <TableCell className="font-mono text-xs font-semibold">#{activity.id}</TableCell>
+                          <TableCell>{activity.customer}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={getStatusVariant(activity.status)}
+                              className={cn({
+                                'bg-accent text-accent-foreground': activity.status === 'approval',
+                                'border-primary/50 text-primary': activity.status === 'inProgress'
+                              })}
+                            >
+                              {getStatusText(activity.status)}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
+                          No hay actividad reciente.
                         </TableCell>
                       </TableRow>
-                    ))
-                   )}
-                   {!loading && data && data.recentActivity.length === 0 && (
-                     <TableRow>
-                      <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
-                        No hay actividad reciente.
-                      </TableCell>
-                    </TableRow>
+                    )
                    )}
                 </TableBody>
               </Table>
@@ -315,26 +323,27 @@ export default function DashboardPage() {
                       </TableRow>
                    ))
                   ) : (
-                    appointmentsData?.pendingRequests.map((request, index) => (
-                      <TableRow key={request.id}>
-                         <TableCell>
-                           {isToday(new Date(request.requestedDate)) && (
-                            <span className="flex h-2 w-2 translate-y-1 rounded-full bg-sky-500" title="Solicitud para hoy" />
-                           )}
-                         </TableCell>
-                        <TableCell>{request.customerName}</TableCell>
-                        <TableCell>{request.notes || 'Sin detalles'}</TableCell>
-                        <TableCell>{formatDateForTable(request.requestedDate)}</TableCell>
+                    appointmentsData?.pendingRequests && appointmentsData.pendingRequests.length > 0 ? (
+                      appointmentsData.pendingRequests.map((request) => (
+                        <TableRow key={request.id}>
+                           <TableCell>
+                             {isToday(new Date(request.requestedDate)) && (
+                              <span className="flex h-2 w-2 translate-y-1 rounded-full bg-sky-500" title="Solicitud para hoy" />
+                             )}
+                           </TableCell>
+                          <TableCell>{request.customerName}</TableCell>
+                          <TableCell>{request.notes || 'Sin detalles'}</TableCell>
+                          <TableCell>{formatDateForTable(request.requestedDate)}</TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                       <TableRow>
+                        <TableCell colSpan={4} className="h-12 text-center text-muted-foreground">
+                          No hay solicitudes de cita pendientes.
+                        </TableCell>
                       </TableRow>
-                    ))
+                     )
                   )}
-                  {!loadingAppointments && appointmentsData && appointmentsData.pendingRequests.length === 0 && (
-                     <TableRow>
-                      <TableCell colSpan={4} className="h-12 text-center text-muted-foreground">
-                        No hay solicitudes de cita pendientes.
-                      </TableCell>
-                    </TableRow>
-                   )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -367,22 +376,23 @@ export default function DashboardPage() {
                         </TableRow>
                      ))
                    ) : (
-                    appointmentsData?.confirmedAppointments.map((appointment) => (
-                      <TableRow key={appointment.id}>
-                        <TableCell>{appointment.customerName}</TableCell>
-                        <TableCell>{appointment.vehicleDescription}</TableCell>
-                        <TableCell>{appointment.service}</TableCell>
-                         <TableCell>{formatDateTimeForTable(appointment.appointmentDate)}</TableCell>
+                    appointmentsData?.confirmedAppointments && appointmentsData.confirmedAppointments.length > 0 ? (
+                      appointmentsData.confirmedAppointments.map((appointment) => (
+                        <TableRow key={appointment.id}>
+                          <TableCell>{appointment.customerName}</TableCell>
+                          <TableCell>{appointment.vehicleDescription}</TableCell>
+                          <TableCell>{appointment.service}</TableCell>
+                           <TableCell>{formatDateTimeForTable(appointment.appointmentDate)}</TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                       <TableRow>
+                        <TableCell colSpan={4} className="h-12 text-center text-muted-foreground">
+                          No hay citas confirmadas próximamente.
+                        </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                   {!loadingAppointments && appointmentsData && appointmentsData.confirmedAppointments.length === 0 && (
-                     <TableRow>
-                      <TableCell colSpan={4} className="h-12 text-center text-muted-foreground">
-                        No hay citas confirmadas próximamente.
-                      </TableCell>
-                    </TableRow>
-                   )}
+                     )
+                    )}
                 </TableBody>
               </Table>
             </CardContent>

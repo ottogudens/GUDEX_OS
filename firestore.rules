@@ -38,7 +38,7 @@ service cloud.firestore {
 
     // Settings
     match /settings/{docId} {
-      allow read: if true; // Public settings can be read by anyone (app, server)
+      allow read: if true;
       allow write: if isAdmin();
     }
     
@@ -50,7 +50,6 @@ service cloud.firestore {
 
     match /customers/{userId} {
       allow read: if isStaff() || isOwner(userId);
-      // Allow creation by Staff or during new client registration
       allow create: if isStaff() || (isSignedIn() && request.resource.data.email == request.auth.token.email);
       allow update: if isAdmin() || isOwner(userId);
       allow delete: if isAdmin();
@@ -58,25 +57,16 @@ service cloud.firestore {
     
     // Vehicles
     match /vehicles/{vehicleId} {
-        // Create: A client can create a vehicle for themselves. Staff can create for any client.
         allow create: if (isClient() && request.resource.data.customerId == request.auth.uid) || isStaff();
-        
-        // Read: A client can read their own vehicles. Staff can read all vehicles.
         allow read: if (isClient() && resource.data.customerId == request.auth.uid) || isStaff();
-        
-        // Update: A client can update their own vehicles. Staff can update all vehicles.
         allow update: if (isClient() && resource.data.customerId == request.auth.uid) || isStaff();
-        
-        // Delete: Only staff can delete vehicles.
         allow delete: if isStaff();
     }
 
     // Products & Services
     match /products/{productId} {
       allow read: if isStaff();
-      // Only Admins can create/delete/update prices etc.
       allow create, delete: if isAdmin();
-      // Staff (Mecanico) can only update the stock field.
       allow update: if isAdmin() || (isStaff() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock']));
     }
     
@@ -85,7 +75,7 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Categories (Managed by Admins)
+    // Categories
     match /productCategories/{categoryId} {
         allow read: if isStaff();
         allow create, update, delete: if isAdmin();
@@ -97,8 +87,8 @@ service cloud.firestore {
 
     // Stock Logs
     match /stockLogs/{logId} {
-        allow create: if isStaff(); // Mechanics and Admins can create logs via stock take
-        allow read: if isStaff(); // Allow Staff to read stock logs for reporting/viewing history
+        allow create: if isStaff();
+        allow read: if isStaff();
     }
     
     // Workshop operations
@@ -135,7 +125,9 @@ service cloud.firestore {
     }
     
     match /sales/{saleId} {
-      allow read, write: if isAdmin();
+      // Allow staff to read for dashboard, but only admin to write.
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
     
     match /cashRegisterSessions/{sessionId} {
@@ -152,7 +144,7 @@ service cloud.firestore {
       allow read: if isAdmin() || (isClient() && resource.data.customerId == request.auth.uid);
     }
     
-    // Server-side logging (write-only for servers)
+    // Server-side logging
     match /emailLogs/{logId} {
         allow create: if true;
         allow read, update, delete: if isAdmin();

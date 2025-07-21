@@ -1,24 +1,71 @@
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+'use server';
+
 import { db } from './firebase';
-import type { SentEmail, EmailLog } from './types';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
-// This file contains mutation functions intended for server-side use.
-// It is NOT marked with 'use client'.
-
-export async function logSentEmail(data: Omit<SentEmail, 'id' | 'sentAt'>) {
-    const emailsCol = collection(db, 'sentEmails');
-    await addDoc(emailsCol, {
-        ...data,
-        sentAt: serverTimestamp(),
-    });
+interface UserInfo {
+    id: string;
+    name: string;
 }
 
-export async function logEmailAction(level: 'INFO' | 'ERROR', message: string, flow: string) {
-    const logsCol = collection(db, 'emailLogs');
-    await addDoc(logsCol, {
-        level,
-        message,
-        flow,
-        createdAt: serverTimestamp(),
-    });
+interface FinalAmounts {
+    cash: number;
+    card: number;
+    transfer: number;
+}
+
+interface CloseCashRegisterParams {
+    sessionId: string;
+    finalAmounts: FinalAmounts;
+    closedBy: UserInfo;
+    summary: {
+        totalSales: number;
+        cashSales: number;
+        cardSales: number;
+        transferSales: number;
+        manualIncome: number;
+        manualExpense: number;
+        expectedInCash: number;
+    };
+}
+
+export async function closeCashRegister(params: CloseCashRegisterParams) {
+    const { sessionId, finalAmounts, closedBy, summary } = params;
+
+    if (!sessionId) {
+        throw new Error("Session ID is required.");
+    }
+
+    const sessionRef = doc(db, 'cashRegisterSessions', sessionId);
+
+    try {
+        await updateDoc(sessionRef, {
+            status: 'closed',
+            closedAt: serverTimestamp(),
+            closedBy: closedBy,
+            closingAmount: finalAmounts,
+            expectedAmount: {
+                cash: summary.expectedInCash,
+                card: summary.cardSales,
+                transfer: summary.transferSales,
+            },
+            summary: {
+                totalSales: summary.totalSales,
+                cashSales: summary.cashSales,
+                cardSales: summary.cardSales,
+                transferSales: summary.transferSales,
+                manualIncome: summary.manualIncome,
+                manualExpense: summary.manualExpense,
+            },
+            discrepancy: {
+                cash: finalAmounts.cash - summary.expectedInCash,
+                card: finalAmounts.card - summary.cardSales,
+                transfer: finalAmounts.transfer - summary.transferSales,
+            },
+        });
+    } catch (error) {
+        console.error("Error updating cash register session document:", error);
+        throw new Error("Failed to update Firestore document.");
+    }
 }

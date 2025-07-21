@@ -5,6 +5,7 @@ import { collection, doc, addDoc, setDoc, serverTimestamp, updateDoc, deleteDoc,
 import type { User, Customer, Product, Service, WorkshopSettings, ServiceCategory, ProductCategory, Camera, WorkOrder, Sale, CashMovement, AppointmentRequestFormData, Provider, ProviderPaymentFormData, Budget, BudgetRequest, Appointment } from './types';
 import { ProductFormData, ServiceFormData, ServiceCategoryFormData, ProductCategoryFormData, AddUserFormData, CameraFormData, EmailSettingsSchema, WorkOrderSchema, VehicleSchema, SaleSchema, ProviderSchema, ProviderPaymentSchema } from './schemas';
 import { z } from 'zod';
+import { closeCashRegister as serverCloseCashRegister } from './server-mutations';
 
 // Generic function to add a document to a collection
 export async function addDocument<T>(collectionName: string, data: T) {
@@ -274,16 +275,17 @@ export async function createSale(saleData: z.infer<typeof SaleSchema>) {
 }
 
 
-export async function addCashMovement(movementData: Omit<CashMovement, 'id' | 'createdAt' | 'createdBy'>, user: {id: string, name: string}) {
+export async function addCashMovement(sessionId: string, amount: number, description: string, type: 'income' | 'expense', createdBy: { id: string; name: string; }) {
     try {
-        const dataWithUser = {
-            ...movementData,
-            createdBy: {
-                id: user.id,
-                name: user.name,
-            },
+        const movementData = {
+            sessionId,
+            amount,
+            description,
+            type,
+            createdBy,
+            createdAt: serverTimestamp(),
         };
-        return addDocument('cashMovements', dataWithUser);
+        return addDocument('cashMovements', movementData);
     } catch(e) {
         console.error(e);
         throw new Error('Failed to add cash movement.');
@@ -379,4 +381,18 @@ export async function openCashRegister(initialAmount: number, userId: string, us
         openedAt: serverTimestamp(),
         openedBy: { id: userId, name: userName },
     });
+}
+
+export async function closeCashRegister(sessionId: string, finalAmounts: { cash: number; card: number; transfer: number; }, closedBy: { id: string; name: string; }, summary: any) {
+    try {
+        // This function will now act as a client-side wrapper for the server-side mutation.
+        await serverCloseCashRegister({ sessionId, finalAmounts, closedBy, summary });
+    } catch (error) {
+        console.error("Error closing cash register:", error);
+        // Re-throw the error to be caught by the component
+        if (error instanceof Error) {
+            throw new Error(`Failed to close cash register: ${error.message}`);
+        }
+        throw new Error('An unknown error occurred while closing the cash register.');
+    }
 }

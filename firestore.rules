@@ -125,17 +125,18 @@ service cloud.firestore {
     }
     
     match /sales/{saleId} {
-      // Allow staff to read for dashboard, but only admin to write.
       allow read: if isStaff();
       allow write: if isAdmin();
     }
     
     match /cashRegisterSessions/{sessionId} {
-      allow read, write: if isAdmin();
+      // Allow any staff member to open/close the register
+      allow read, write: if isStaff();
     }
     
     match /cashMovements/{movementId} {
-      allow read, write: if isAdmin();
+      // Allow any staff member to add movements to an open session
+      allow read, write: if isStaff();
     }
 
     // Receipts can be read by clients

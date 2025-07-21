@@ -14,22 +14,30 @@ service cloud.firestore {
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-    
-    function getUserData(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data;
+
+    // More robust helper functions that check for document existence
+    // before trying to access properties. This prevents errors on
+    // non-existent documents, which would cause a permission denial.
+    function getUserRole() {
+      // Safely get the user's role, returning null if it doesn't exist.
+      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      if (exists(userDocPath)) {
+        return get(userDocPath).data.role;
+      }
+      return null;
     }
 
     function isAdmin() {
-      return isSignedIn() && getUserData(request.auth.uid).role == 'Administrador';
+      return isSignedIn() && getUserRole() == 'Administrador';
     }
     
     function isStaff() {
-      let userRole = getUserData(request.auth.uid).role;
+      let userRole = getUserRole();
       return isSignedIn() && (userRole == 'Administrador' || userRole == 'Mecanico');
     }
     
     function isClient() {
-      return isSignedIn() && getUserData(request.auth.uid).role == 'Cliente';
+      return isSignedIn() && getUserRole() == 'Cliente';
     }
 
     // =================================

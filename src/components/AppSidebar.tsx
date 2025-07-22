@@ -44,22 +44,12 @@ const allNavItems: NavItem[] = [
     tooltip: 'Gestión del Taller', 
     roles: ['Administrador', 'Mecanico'],
     children: [
-        { href: '/appointments', label: 'Citas', tooltip: 'Citas' },
-        { href: '/work-orders', label: 'Órdenes de Trabajo', tooltip: 'Órdenes de Trabajo' },
-        { href: '/budgets', label: 'Presupuestos', tooltip: 'Presupuestos' },
-        { 
-          label: 'Inspección', 
-          icon: ClipboardList, 
-          tooltip: 'Inspección Vehicular', 
-          roles: ['Administrador', 'Mecanico'],
-          children: [
-            { href: '/dvi/new', label: 'Nueva Inspección', tooltip: 'Nueva Inspección Vehicular' },
-            { href: '/dvi', label: 'Ver Inspecciones', tooltip: 'Ver Inspecciones' },
-            { href: '/dvi/templates', label: 'Plantillas', tooltip: 'Plantillas de Inspección' },
-          ]
-        },
         { href: '/customers', label: 'Clientes', tooltip: 'Lista de Clientes' },
         { href: '/vehicles', label: 'Vehículos', tooltip: 'Lista de Vehículos' },
+        { href: '/appointments', label: 'Citas', tooltip: 'Citas' },
+        { href: '/work-orders', label: 'Órdenes de Trabajo', tooltip: 'Órdenes de Trabajo' },
+        { href: '/dvi', label: 'Inspecciones (DVI)', tooltip: 'Inspección Vehicular Digital' },
+        { href: '/budgets', label: 'Presupuestos', tooltip: 'Presupuestos' },
     ]
   },
   { 

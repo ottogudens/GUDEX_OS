@@ -1,7 +1,7 @@
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { unstable_noStore as noStore } from 'next/cache';
 import { db } from './firebase';
-import type { WorkshopSettings, EmailSettings } from './types';
+import type { WorkshopSettings, EmailSettings, DVI } from './types';
 
 // This file contains data-fetching functions intended for server-side use.
 // It is NOT marked with 'use client'.
@@ -58,4 +58,23 @@ export async function fetchEmailSettings(): Promise<EmailSettings> {
     console.error("Error fetching email settings:", error);
     return defaultSettings;
   }
+}
+
+export async function fetchInspections(): Promise<DVI[]> {
+    noStore();
+    try {
+        const inspectionsRef = collection(db, 'dvi');
+        const q = query(inspectionsRef, orderBy('createdAt', 'desc'), limit(20));
+        const querySnapshot = await getDocs(q);
+        
+        const inspections: DVI[] = [];
+        querySnapshot.forEach((doc) => {
+            inspections.push({ id: doc.id, ...doc.data() } as DVI);
+        });
+        
+        return inspections;
+    } catch (error) {
+        console.error("Error fetching DVI inspections:", error);
+        throw new Error('Failed to fetch inspections.');
+    }
 }

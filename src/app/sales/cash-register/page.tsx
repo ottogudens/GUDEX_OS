@@ -1,7 +1,8 @@
 
 "use client";
 
-import { useState, useEffect, useTransition, useMemo, useCallback } from 'react';
+import { useState, useTransition, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -20,46 +21,32 @@ import { format } from 'date-fns';
 export default function CashRegisterPage() {
     const { user } = useAuth();
     const { toast } = useToast();
+    const queryClient = useQueryClient();
     const [isPending, startTransition] = useTransition();
 
-    const [loading, setLoading] = useState(true);
-    const [session, setSession] = useState<CashRegisterSession | null>(null);
-    const [sales, setSales] = useState<Sale[]>([]);
-    const [movements, setMovements] = useState<CashMovement[]>([]);
     const [initialAmount, setInitialAmount] = useState('');
-
     const [manualMovementAmount, setManualMovementAmount] = useState('');
     const [manualMovementDescription, setManualMovementDescription] = useState('');
-    
     const [closingAmounts, setClosingAmounts] = useState({ cash: '', card: '', transfer: '' });
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        try {
-            const activeSession = await fetchActiveCashRegisterSession();
-            setSession(activeSession);
-            if (activeSession) {
-                const [sessionSales, sessionMovements] = await Promise.all([
-                    fetchSalesBySessionId(activeSession.id),
-                    fetchMovementsBySessionId(activeSession.id),
-                ]);
-                setSales(sessionSales);
-                setMovements(sessionMovements);
-            } else {
-                setSales([]);
-                setMovements([]);
-            }
-        } catch (error) {
-            console.error("Error loading cash register data:", error);
-            toast({ variant: 'destructive', title: 'Error', description: 'No se pudo cargar la información de la caja.' });
-        } finally {
-            setLoading(false);
-        }
-    }, [toast]);
-    
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
+    const { data: session, isLoading: isLoadingSession } = useQuery<CashRegisterSession | null>({
+        queryKey: ['activeCashRegisterSession'],
+        queryFn: fetchActiveCashRegisterSession,
+    });
+
+    const sessionId = session?.id;
+
+    const { data: sales = [], isLoading: isLoadingSales } = useQuery<Sale[]>({
+        queryKey: ['sessionSales', sessionId],
+        queryFn: () => fetchSalesBySessionId(sessionId!),
+        enabled: !!sessionId,
+    });
+
+    const { data: movements = [], isLoading: isLoadingMovements } = useQuery<CashMovement[]>({
+        queryKey: ['sessionMovements', sessionId],
+        queryFn: () => fetchMovementsBySessionId(sessionId!),
+        enabled: !!sessionId,
+    });
     
     const summary = useMemo(() => {
         if (!session) return null;
@@ -78,6 +65,12 @@ export default function CashRegisterPage() {
         
         return { totalSales, cashSales, cardSales, transferSales, manualIncome, manualExpense, expectedInCash };
     }, [session, sales, movements]);
+
+    const invalidateSessionQueries = () => {
+        queryClient.invalidateQueries({ queryKey: ['activeCashRegisterSession'] });
+        queryClient.invalidateQueries({ queryKey: ['sessionSales', sessionId] });
+        queryClient.invalidateQueries({ queryKey: ['sessionMovements', sessionId] });
+    }
     
     const handleOpenRegister = () => {
         const amount = parseFloat(initialAmount);
@@ -94,7 +87,7 @@ export default function CashRegisterPage() {
             try {
                 await openCashRegister(amount, user.id, user.name);
                 toast({ title: 'Caja Abierta', description: `La caja se ha abierto con ${formatCurrency(amount)}.` });
-                await loadData();
+                invalidateSessionQueries();
             } catch (error: any) {
                 toast({ variant: 'destructive', title: 'Error al abrir caja', description: error.message });
             }
@@ -119,7 +112,7 @@ export default function CashRegisterPage() {
                 toast({ title: 'Movimiento Registrado' });
                 setManualMovementAmount('');
                 setManualMovementDescription('');
-                await loadData();
+                invalidateSessionQueries();
             } catch (error: any) {
                 toast({ variant: 'destructive', title: 'Error', description: error.message });
             }
@@ -146,9 +139,8 @@ export default function CashRegisterPage() {
             try {
                 await closeCashRegister({ sessionId, finalAmounts, closedBy: { id: user.id, name: user.name }, summary });
                 toast({ title: 'Caja Cerrada' });
-                setSession(null);
                 setClosingAmounts({ cash: '', card: '', transfer: '' });
-                await loadData();
+                invalidateSessionQueries();
             } catch (error: any) {
                 toast({ variant: 'destructive', title: 'Error al cerrar caja', description: error.message });
             }
@@ -161,10 +153,11 @@ export default function CashRegisterPage() {
 
     const formatDate = (timestamp: any) => {
         if (!timestamp) return 'N/A';
-        return format(timestamp.toDate(), 'dd/MM/yyyy HH:mm');
+        const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+        return format(date, 'dd/MM/yyyy HH:mm');
     }
 
-    if (loading) {
+    if (isLoadingSession) {
         return <Skeleton className="h-96 w-full" />;
     }
 
@@ -293,7 +286,9 @@ export default function CashRegisterPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {movements.length === 0 ? (
+                                {isLoadingMovements ? (
+                                    <TableRow><TableCell colSpan={2}><Skeleton className="h-20 w-full" /></TableCell></TableRow>
+                                ) : movements.length === 0 ? (
                                     <TableRow><TableCell colSpan={2} className="text-center h-24">Sin movimientos manuales</TableCell></TableRow>
                                 ) : (
                                     movements.map(m => (

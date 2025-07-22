@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useTransition } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card,
   CardContent,
@@ -63,11 +64,9 @@ import Image from 'next/image';
 type VehicleWithCustomer = Vehicle & { customerName: string };
 
 export default function VehiclesPage() {
-  const [vehicles, setVehicles] = useState<VehicleWithCustomer[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isPending, startTransition] = useTransition();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -77,25 +76,37 @@ export default function VehiclesPage() {
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [vehiclesData, customersData] = await Promise.all([
-        fetchAllVehicles(),
-        fetchCustomers()
-      ]);
-      setVehicles(vehiclesData);
-      setCustomers(customersData);
-    } catch (error) {
-      console.error("Failed to fetch data:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { data: vehicles = [], isLoading: isLoadingVehicles } = useQuery<VehicleWithCustomer[]>({
+    queryKey: ['vehicles'],
+    queryFn: fetchAllVehicles,
+  });
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  const { data: customers = [], isLoading: isLoadingCustomers } = useQuery<Customer[]>({
+    queryKey: ['customers'],
+    queryFn: fetchCustomers,
+    enabled: isEditOpen, // Only fetch customers when the edit dialog is open
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (variables: { id: string, data: VehicleFormData, image: File | null }) => 
+      updateVehicle(variables.id, variables.data, variables.image),
+    onSuccess: () => {
+      toast({ title: 'Éxito', description: 'Vehículo actualizado.' });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      setIsEditOpen(false);
+    },
+    onError: (error: any) => toast({ variant: 'destructive', title: 'Error', description: error.message })
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteVehicle,
+    onSuccess: () => {
+      toast({ title: 'Éxito', description: 'Vehículo eliminado.' });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      setIsDeleteOpen(false);
+    },
+    onError: (error: any) => toast({ variant: 'destructive', title: 'Error', description: error.message })
+  });
 
   const openEditDialog = (vehicle: VehicleWithCustomer) => {
     setSelectedVehicle(vehicle);
@@ -142,31 +153,19 @@ export default function VehiclesPage() {
       return;
     }
 
-    startTransition(async () => {
-      try {
-        await updateVehicle(selectedVehicle.id, validatedFields.data, editImageFile);
-        toast({ title: 'Éxito', description: 'Vehículo actualizado correctamente.' });
-        setIsEditOpen(false);
-        await loadData();
-      } catch (error: any) {
-        toast({ variant: 'destructive', title: 'Error al actualizar', description: error.message });
-      }
+    updateMutation.mutate({
+      id: selectedVehicle.id,
+      data: validatedFields.data,
+      image: editImageFile,
     });
   };
 
   const handleDelete = () => {
     if (!selectedVehicle) return;
-    startTransition(async () => {
-        try {
-            await deleteVehicle(selectedVehicle.id);
-            toast({ title: 'Éxito', description: 'Vehículo eliminado correctamente.' });
-            setIsDeleteOpen(false);
-            await loadData();
-        } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Error al eliminar', description: error.message });
-        }
-    });
+    deleteMutation.mutate(selectedVehicle.id);
   };
+
+  const isLoading = isLoadingVehicles || isPending || updateMutation.isPending || deleteMutation.isPending;
 
   return (
     <AuthGuard allowedRoles={['Administrador', 'Mecanico']}>
@@ -176,37 +175,37 @@ export default function VehiclesPage() {
             <CardTitle>Vehículos</CardTitle>
             <CardDescription>Lista de todos los vehículos de clientes registrados.</CardDescription>
           </div>
-           <AddVehicleButton onSuccess={loadData} />
+           <AddVehicleButton onSuccess={() => queryClient.invalidateQueries({ queryKey: ['vehicles'] })} />
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>ID Vehículo</TableHead>
                 <TableHead>Vehículo</TableHead>
                 <TableHead>Patente</TableHead>
                 <TableHead>Propietario</TableHead>
-                <TableHead>VIN</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? (
+              {isLoadingVehicles ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
+                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-40" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-20" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-48" /></TableCell>
                     <TableCell><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
                   </TableRow>
                 ))
               ) : vehicles.length > 0 ? (
                 vehicles.map((vehicle) => (
                   <TableRow key={vehicle.id}>
+                    <TableCell className="font-mono text-xs">{vehicle.id.slice(0, 7).toUpperCase()}</TableCell>
                     <TableCell className="font-medium">{vehicle.year} {vehicle.make} {vehicle.model}</TableCell>
                     <TableCell>{vehicle.licensePlate}</TableCell>
                     <TableCell>{vehicle.customerName}</TableCell>
-                    <TableCell className="font-mono text-xs">{vehicle.vin || 'N/A'}</TableCell>
                     <TableCell className="text-right">
                        <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -247,9 +246,7 @@ export default function VehiclesPage() {
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Editar Vehículo</DialogTitle>
-            <DialogDescription>
-              Modifica los datos del vehículo seleccionado.
-            </DialogDescription>
+            <DialogDescription>Modifica los datos del vehículo seleccionado.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditSubmit}>
             <ScrollArea className="max-h-[70vh] p-1">
@@ -259,56 +256,27 @@ export default function VehiclesPage() {
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="grid gap-2">
                           <Label htmlFor="customerId">Cliente *</Label>
+                          {isLoadingCustomers ? <Skeleton className="h-10"/> :
                           <Select name="customerId" value={editFormData.customerId || ''} onValueChange={(val) => handleEditSelectChange('customerId', val)} required>
                               <SelectTrigger><SelectValue placeholder="Selecciona un cliente" /></SelectTrigger>
                               <SelectContent>
                                   {customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                               </SelectContent>
-                          </Select>
+                          </Select>}
                       </div>
-                      <div className="grid gap-2">
-                          <Label htmlFor="licensePlate">Patente *</Label>
-                          <Input id="licensePlate" name="licensePlate" value={editFormData.licensePlate || ''} onChange={handleEditFormChange} required />
-                      </div>
-                      <div className="grid gap-2">
-                          <Label htmlFor="make">Marca *</Label>
-                          <Input id="make" name="make" value={editFormData.make || ''} onChange={handleEditFormChange} required />
-                      </div>
-                      <div className="grid gap-2">
-                          <Label htmlFor="model">Modelo *</Label>
-                          <Input id="model" name="model" value={editFormData.model || ''} onChange={handleEditFormChange} required />
-                      </div>
-                      <div className="grid gap-2">
-                          <Label htmlFor="year">Año *</Label>
-                          <Input id="year" name="year" type="number" value={editFormData.year || ''} onChange={handleEditFormChange} required />
-                      </div>
-                      <div className="grid gap-2">
-                          <Label htmlFor="engineDisplacement">Cilindrada *</Label>
-                          <Input id="engineDisplacement" name="engineDisplacement" value={editFormData.engineDisplacement || ''} onChange={handleEditFormChange} required />
-                      </div>
-                      <div className="grid gap-2">
-                          <Label htmlFor="fuelType">Tipo de Combustible *</Label>
-                          <Select name="fuelType" value={editFormData.fuelType || ''} onValueChange={(val) => handleEditSelectChange('fuelType', val)} required>
-                              <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                              <SelectContent>
-                                  <SelectItem value="Gasolina">Gasolina</SelectItem>
-                                  <SelectItem value="Diésel">Diésel</SelectItem>
-                                  <SelectItem value="Eléctrico">Eléctrico</SelectItem>
-                                  <SelectItem value="Híbrido">Híbrido</SelectItem>
-                                  <SelectItem value="Otro">Otro</SelectItem>
-                              </SelectContent>
-                          </Select>
-                      </div>
-                      <div className="grid gap-2">
-                          <Label htmlFor="transmissionType">Tipo de Transmisión *</Label>
-                          <Select name="transmissionType" value={editFormData.transmissionType || ''} onValueChange={(val) => handleEditSelectChange('transmissionType', val)} required>
-                              <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                              <SelectContent>
-                                  <SelectItem value="Manual">Manual</SelectItem>
-                                  <SelectItem value="Automática">Automática</SelectItem>
-                              </SelectContent>
-                          </Select>
-                      </div>
+                      <div className="grid gap-2"><Label>Patente *</Label><Input name="licensePlate" value={editFormData.licensePlate || ''} onChange={handleEditFormChange} required /></div>
+                      <div className="grid gap-2"><Label>Marca *</Label><Input name="make" value={editFormData.make || ''} onChange={handleEditFormChange} required /></div>
+                      <div className="grid gap-2"><Label>Modelo *</Label><Input name="model" value={editFormData.model || ''} onChange={handleEditFormChange} required /></div>
+                      <div className="grid gap-2"><Label>Año *</Label><Input name="year" type="number" value={editFormData.year || ''} onChange={handleEditFormChange} required /></div>
+                      <div className="grid gap-2"><Label>Cilindrada *</Label><Input name="engineDisplacement" value={editFormData.engineDisplacement || ''} onChange={handleEditFormChange} required /></div>
+                      <div className="grid gap-2"><Label>Combustible *</Label><Select name="fuelType" value={editFormData.fuelType || ''} onValueChange={(val) => handleEditSelectChange('fuelType', val)} required>
+                          <SelectTrigger><SelectValue/></SelectTrigger>
+                          <SelectContent><SelectItem value="Gasolina">Gasolina</SelectItem><SelectItem value="Diésel">Diésel</SelectItem><SelectItem value="Eléctrico">Eléctrico</SelectItem><SelectItem value="Híbrido">Híbrido</SelectItem><SelectItem value="Otro">Otro</SelectItem></SelectContent>
+                      </Select></div>
+                      <div className="grid gap-2"><Label>Transmisión *</Label><Select name="transmissionType" value={editFormData.transmissionType || ''} onValueChange={(val) => handleEditSelectChange('transmissionType', val)} required>
+                           <SelectTrigger><SelectValue/></SelectTrigger>
+                           <SelectContent><SelectItem value="Manual">Manual</SelectItem><SelectItem value="Automática">Automática</SelectItem></SelectContent>
+                      </Select></div>
                    </div>
                 </div>
                  <Accordion type="single" collapsible>
@@ -316,22 +284,19 @@ export default function VehiclesPage() {
                         <AccordionTrigger>Datos Opcionales</AccordionTrigger>
                         <AccordionContent>
                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-                               <div className="md:col-span-2">
-                                   <Label>Imagen</Label>
-                                   <div className="flex items-center gap-4 mt-2">
-                                     <div className="w-32 h-24 border rounded-md flex items-center justify-center bg-muted">
-                                         {editImagePreview ? <Image src={editImagePreview} alt="Vista previa" width={128} height={96} className="object-cover w-full h-full rounded-md" /> : <Skeleton className="w-full h-full" />}
-                                     </div>
-                                     <Input type="file" name="image" accept="image/*" onChange={handleEditImageChange} className="max-w-xs" />
-                                   </div>
-                               </div>
-                                <div className="grid gap-2"><Label htmlFor="vin">VIN</Label><Input id="vin" name="vin" value={editFormData.vin || ''} onChange={handleEditFormChange} /></div>
-                                <div className="grid gap-2"><Label htmlFor="engineNumber">N° Motor</Label><Input id="engineNumber" name="engineNumber" value={editFormData.engineNumber || ''} onChange={handleEditFormChange} /></div>
-                                <div className="grid gap-2"><Label htmlFor="color">Color</Label><Input id="color" name="color" value={editFormData.color || ''} onChange={handleEditFormChange} /></div>
-                                <div className="grid gap-2"><Label htmlFor="oilFilter">Filtro Aceite</Label><Input id="oilFilter" name="oilFilter" value={editFormData.oilFilter || ''} onChange={handleEditFormChange} /></div>
-                                <div className="grid gap-2"><Label htmlFor="airFilter">Filtro Aire</Label><Input id="airFilter" name="airFilter" value={editFormData.airFilter || ''} onChange={handleEditFormChange} /></div>
-                                <div className="grid gap-2"><Label htmlFor="fuelFilter">Filtro Combustible</Label><Input id="fuelFilter" name="fuelFilter" value={editFormData.fuelFilter || ''} onChange={handleEditFormChange} /></div>
-                                <div className="grid gap-2"><Label htmlFor="pollenFilter">Filtro Polen</Label><Input id="pollenFilter" name="pollenFilter" value={editFormData.pollenFilter || ''} onChange={handleEditFormChange} /></div>
+                               <div className="md:col-span-2"><Label>Imagen</Label><div className="flex items-center gap-4 mt-2">
+                                 <div className="w-32 h-24 border rounded-md flex items-center justify-center bg-muted">
+                                     {editImagePreview ? <Image src={editImagePreview} alt="Vista previa" width={128} height={96} className="object-cover w-full h-full rounded-md" /> : <Skeleton className="w-full h-full" />}
+                                 </div>
+                                 <Input type="file" name="image" accept="image/*" onChange={handleEditImageChange} className="max-w-xs" />
+                               </div></div>
+                                <div className="grid gap-2"><Label>VIN</Label><Input name="vin" value={editFormData.vin || ''} onChange={handleEditFormChange} /></div>
+                                <div className="grid gap-2"><Label>N° Motor</Label><Input name="engineNumber" value={editFormData.engineNumber || ''} onChange={handleEditFormChange} /></div>
+                                <div className="grid gap-2"><Label>Color</Label><Input name="color" value={editFormData.color || ''} onChange={handleEditFormChange} /></div>
+                                <div className="grid gap-2"><Label>Filtro Aceite</Label><Input name="oilFilter" value={editFormData.oilFilter || ''} onChange={handleEditFormChange} /></div>
+                                <div className="grid gap-2"><Label>Filtro Aire</Label><Input name="airFilter" value={editFormData.airFilter || ''} onChange={handleEditFormChange} /></div>
+                                <div className="grid gap-2"><Label>Filtro Combustible</Label><Input name="fuelFilter" value={editFormData.fuelFilter || ''} onChange={handleEditFormChange} /></div>
+                                <div className="grid gap-2"><Label>Filtro Polen</Label><Input name="pollenFilter" value={editFormData.pollenFilter || ''} onChange={handleEditFormChange} /></div>
                            </div>
                         </AccordionContent>
                     </AccordionItem>
@@ -340,13 +305,12 @@ export default function VehiclesPage() {
             </ScrollArea>
             <DialogFooter className="pt-6 border-t">
               <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={isPending}>{isPending ? 'Guardando...' : 'Guardar Cambios'}</Button>
+              <Button type="submit" disabled={updateMutation.isPending}>{updateMutation.isPending ? 'Guardando...' : 'Guardar Cambios'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <AlertDialogContent>
             <AlertDialogHeader>
@@ -357,8 +321,8 @@ export default function VehiclesPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90" disabled={isPending}>
-                    {isPending ? 'Eliminando...' : 'Sí, eliminar'}
+                <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90" disabled={deleteMutation.isPending}>
+                    {deleteMutation.isPending ? 'Eliminando...' : 'Sí, eliminar'}
                 </AlertDialogAction>
             </AlertDialogFooter>
         </AlertDialogContent>

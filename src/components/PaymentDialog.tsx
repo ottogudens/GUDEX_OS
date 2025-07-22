@@ -33,7 +33,7 @@ import type { CartItem, Payment, PaymentMethod, Customer, Sale, WorkshopSettings
 import { useToast } from '@/hooks/use-toast';
 import { createSale, saveReceipt } from '@/lib/mutations';
 import { useSettings } from '@/context/SettingsContext';
-import { sendReceiptEmail } from '@/ai/flows/send-receipt-email-flow';
+// import { sendReceiptEmail } from '@/ai/flows/send-receipt-email-flow';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
@@ -358,16 +358,16 @@ export function PaymentDialog({ isOpen, onClose, cart, total, customer, workOrde
             const pdfBase64 = generateA4ReceiptAsBase64(saleId);
             await saveReceipt(saleId, pdfBase64, customer?.id || null, customer?.name || 'Cliente Varios');
             
-            if (customer && customer.id !== 'general' && customer.email) {
-                setEmailStatus('sending');
-                const emailResult = await sendReceiptEmail({
-                    customerName: customer.name,
-                    customerEmail: customer.email,
-                    saleId: saleId,
-                    receiptPdfAsBase64: pdfBase64,
-                });
-                setEmailStatus(emailResult.success ? 'sent' : 'error');
-            }
+            // if (customer && customer.id !== 'general' && customer.email) {
+            //     setEmailStatus('sending');
+            //     const emailResult = await sendReceiptEmail({
+            //         customerName: customer.name,
+            //         customerEmail: customer.email,
+            //         saleId: saleId,
+            //         receiptPdfAsBase64: pdfBase64,
+            //     });
+            //     setEmailStatus(emailResult.success ? 'sent' : 'error');
+            // }
 
         } catch(error: any) {
             toast({ variant: 'destructive', title: 'Error al registrar la venta', description: error.message });

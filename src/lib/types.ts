@@ -325,3 +325,61 @@ export interface ProviderPayment {
     };
     createdAt: Timestamp;
 }
+
+// =================================
+//  Digital Vehicle Inspection (DVI)
+// =================================
+
+export type DVIPointStatus = 'ok' | 'attention' | 'critical';
+
+export interface DVIPoint {
+  id: string;
+  label: string;
+  status: DVIPointStatus;
+  notes?: string;
+  images?: string[]; // Array of image URLs from Firebase Storage
+}
+
+export interface DVISection {
+  id: string;
+  title: string;
+  points: DVIPoint[];
+}
+
+export interface DVI {
+  id: string;
+  workOrderId?: string;
+  templateName: string;
+  status: 'in-progress' | 'completed';
+  inspector: {
+    id: string;
+    name: string;
+  };
+  vehicle: {
+    id: string;
+    make: string;
+    model: string;
+    plate: string;
+  };
+  customer: {
+    id: string;
+    name: string;
+  };
+  sections: DVISection[];
+  summaryNotes?: string;
+  createdAt: Timestamp;
+  completedAt?: Timestamp;
+}
+
+export interface DVITemplate {
+  id: string;
+  name: string;
+  sections: Array<{
+    id: string;
+    title: string;
+    points: Array<{
+      id: string;
+      label: string;
+    }>;
+  }>;
+}

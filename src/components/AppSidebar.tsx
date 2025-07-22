@@ -32,7 +32,7 @@ type NavItem = {
   label: string;
   tooltip: string;
   roles: User['role'][];
-  children?: SubNavItem[];
+  children?: NavItem[] | SubNavItem[];
 };
 
 
@@ -47,7 +47,17 @@ const allNavItems: NavItem[] = [
         { href: '/appointments', label: 'Citas', tooltip: 'Citas' },
         { href: '/work-orders', label: 'Órdenes de Trabajo', tooltip: 'Órdenes de Trabajo' },
         { href: '/budgets', label: 'Presupuestos', tooltip: 'Presupuestos' },
-        { href: '/dvi', label: 'Inspección', tooltip: 'Inspección Vehicular' },
+        { 
+          label: 'Inspección', 
+          icon: ClipboardList, 
+          tooltip: 'Inspección Vehicular', 
+          roles: ['Administrador', 'Mecanico'],
+          children: [
+            { href: '/dvi/new', label: 'Nueva Inspección', tooltip: 'Nueva Inspección Vehicular' },
+            { href: '/dvi', label: 'Ver Inspecciones', tooltip: 'Ver Inspecciones' },
+            { href: '/dvi/templates', label: 'Plantillas', tooltip: 'Plantillas de Inspección' },
+          ]
+        },
         { href: '/customers', label: 'Clientes', tooltip: 'Lista de Clientes' },
         { href: '/vehicles', label: 'Vehículos', tooltip: 'Lista de Vehículos' },
     ]
@@ -103,6 +113,16 @@ const allNavItems: NavItem[] = [
     tooltip: 'Gestión de Compras', 
     roles: ['Administrador'],
     children: [
+        { 
+          label: 'Órdenes de Compra', 
+          icon: FileText, 
+          tooltip: 'Órdenes de Compra', 
+          roles: ['Administrador'],
+          children: [
+            { href: '/purchases/orders/new', label: 'Nueva Orden', tooltip: 'Nueva Orden de Compra' },
+            { href: '/purchases/orders', label: 'Ver Órdenes', tooltip: 'Ver Órdenes de Compra' },
+          ]
+        },
         { href: '/purchases/invoices', label: 'Ingreso de Facturas', tooltip: 'Ingreso de Facturas' },
         { href: '/purchases/providers', label: 'Proveedores', tooltip: 'Gestión de Proveedores' },
         { href: '/purchases/provider-payments', label: 'Pagos a Proveedores', tooltip: 'Pagos a Proveedores' },
@@ -120,7 +140,12 @@ export function AppSidebar() {
   const [openSubmenus, setOpenSubmenus] = React.useState<string[]>([]);
 
   React.useEffect(() => {
-    const activeParent = allNavItems.find(item => item.children?.some(child => pathname.startsWith(child.href!)));
+    const activeParent = allNavItems.find(item => 
+      item.children?.some(child => 
+        pathname.startsWith(child.href!) || 
+        (child.children && child.children.some(subChild => pathname.startsWith(subChild.href!)))
+      )
+    );
     if (activeParent && !openSubmenus.includes(activeParent.label)) {
       setOpenSubmenus(prev => [...prev, activeParent.label]);
     }
@@ -142,6 +167,104 @@ export function AppSidebar() {
         : [...prev, label]
     );
   };
+  
+  const renderNavItems = (items: NavItem[]) => {
+    return items.map((item) => {
+      const hasChildren = item.children && item.children.length > 0;
+      const isActive = hasChildren
+        ? item.children!.some(child => 
+            pathname.startsWith(child.href!) || 
+            (child.children && child.children.some(subChild => pathname.startsWith(subChild.href!)))
+          )
+        : (item.href ? (item.href === '/' ? pathname === item.href : pathname.startsWith(item.href)) : false);
+
+      if (hasChildren) {
+        const isSubmenuOpen = openSubmenus.includes(item.label);
+        return (
+          <SidebarMenuItem key={item.label}>
+            <SidebarMenuButton
+              isActive={isActive}
+              tooltip={item.tooltip}
+              onClick={() => toggleSubmenu(item.label)}
+              className="justify-between"
+            >
+              <div className="flex items-center gap-2 overflow-hidden">
+                <item.icon />
+                <span className="truncate">{item.label}</span>
+              </div>
+              <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isSubmenuOpen ? 'rotate-180' : ''}`} />
+            </SidebarMenuButton>
+            {isSubmenuOpen && (
+              <SidebarMenuSub>
+                {item.children!.map(child => {
+                  if (child.children) {
+                    return (
+                      <div key={child.label}>
+                        <SidebarMenuButton
+                            isActive={child.children.some(subChild => pathname.startsWith(subChild.href!))}
+                            tooltip={child.tooltip}
+                            onClick={() => toggleSubmenu(child.label)}
+                            className="justify-between"
+                        >
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <child.icon />
+                            <span className="truncate">{child.label}</span>
+                          </div>
+                          <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${openSubmenus.includes(child.label) ? 'rotate-180' : ''}`} />
+                        </SidebarMenuButton>
+                        {openSubmenus.includes(child.label) && (
+                          <SidebarMenuSub>
+                            {child.children.map(subChild => {
+                              const isChildActive = subChild.href === '/' ? pathname === subChild.href : pathname.startsWith(subChild.href);
+                              return (
+                                <SidebarMenuSubItem key={subChild.href}>
+                                  <SidebarMenuSubButton asChild isActive={isChildActive}>
+                                    <Link href={subChild.href!} onClick={handleLinkClick}>
+                                      <span>{subChild.label}</span>
+                                    </Link>
+                                  </SidebarMenuSubButton>
+                                </SidebarMenuSubItem>
+                              );
+                            })}
+                          </SidebarMenuSub>
+                        )}
+                      </div>
+                    );
+                  }
+                  
+                  const isChildActive = child.href === '/' ? pathname === child.href : pathname.startsWith(child.href);
+                  return (
+                    <SidebarMenuSubItem key={child.href}>
+                      <SidebarMenuSubButton asChild isActive={isChildActive}>
+                        <Link href={child.href!} onClick={handleLinkClick}>
+                          <span>{child.label}</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  );
+                })}
+              </SidebarMenuSub>
+            )}
+          </SidebarMenuItem>
+        );
+      }
+
+      return (
+        <SidebarMenuItem key={item.href}>
+          <SidebarMenuButton
+            asChild
+            isActive={isActive}
+            tooltip={item.tooltip}
+          >
+            <Link href={item.href!} onClick={handleLinkClick}>
+              <item.icon />
+              <span>{item.label}</span>
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      );
+    });
+  };
 
   return (
     <Sidebar>
@@ -155,63 +278,7 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu>
-          {navItems.map((item) => {
-              const hasChildren = item.children && item.children.length > 0;
-              const isActive = hasChildren
-                ? item.children!.some(child => pathname.startsWith(child.href!))
-                : (item.href ? (item.href === '/' ? pathname === item.href : pathname.startsWith(item.href)) : false);
-
-              if (hasChildren) {
-                  const isSubmenuOpen = openSubmenus.includes(item.label);
-                  return (
-                      <SidebarMenuItem key={item.label}>
-                          <SidebarMenuButton
-                              isActive={isActive}
-                              tooltip={item.tooltip}
-                              onClick={() => toggleSubmenu(item.label)}
-                              className="justify-between"
-                          >
-                            <div className="flex items-center gap-2 overflow-hidden">
-                              <item.icon />
-                              <span className="truncate">{item.label}</span>
-                            </div>
-                            <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isSubmenuOpen ? 'rotate-180' : ''}`} />
-                          </SidebarMenuButton>
-                          {isSubmenuOpen && (
-                            <SidebarMenuSub>
-                                {item.children!.map(child => {
-                                  const isChildActive = child.href === '/' ? pathname === child.href : pathname.startsWith(child.href);
-                                  return (
-                                    <SidebarMenuSubItem key={child.href}>
-                                        <SidebarMenuSubButton asChild isActive={isChildActive}>
-                                            <Link href={child.href!} onClick={handleLinkClick}>
-                                                <span>{child.label}</span>
-                                            </Link>
-                                        </SidebarMenuSubButton>
-                                    </SidebarMenuSubItem>
-                                  )
-                                })}
-                            </SidebarMenuSub>
-                          )}
-                      </SidebarMenuItem>
-                  );
-              }
-
-              return (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive}
-                    tooltip={item.tooltip}
-                  >
-                    <Link href={item.href!} onClick={handleLinkClick}>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-          })}
+          {renderNavItems(navItems)}
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>

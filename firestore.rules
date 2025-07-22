@@ -15,9 +15,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Corrected, robust helper functions that check for document existence
-    // before trying to access properties. This prevents errors on
-    // non-existent documents, which would cause a permission denial.
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
@@ -27,8 +24,6 @@ service cloud.firestore {
     }
 
     function getUserRole() {
-      // Use ternary operator which is valid in security rules.
-      // Return the role if the user document exists, otherwise return null.
       return userExists() ? getUserData().data.role : null;
     }
 
@@ -49,18 +44,20 @@ service cloud.firestore {
     //  Collection Rules
     // =================================
 
-    // Settings
+    // Settings: Public read, only admin write.
     match /settings/{docId} {
       allow read: if true;
       allow write: if isAdmin();
     }
     
-    // Users and Customers (document ID is the user UID)
+    // Users: Admins can manage all, users can manage their own profile.
     match /users/{userId} {
       allow read, update: if isAdmin() || isOwner(userId);
       allow create, delete: if isAdmin();
     }
 
+    // Customers: Staff can read all. Users can read their own.
+    // Staff can create. Users can create a customer profile for themselves upon signup.
     match /customers/{userId} {
       allow read: if isStaff() || isOwner(userId);
       allow create: if isStaff() || (isSignedIn() && request.resource.data.email == request.auth.token.email);
@@ -68,15 +65,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
-    // Vehicles
+    // Vehicles: Staff can manage. Clients can manage their own vehicles.
     match /vehicles/{vehicleId} {
-        allow create: if (isClient() && request.resource.data.customerId == request.auth.uid) || isStaff();
-        allow read: if (isClient() && resource.data.customerId == request.auth.uid) || isStaff();
-        allow update: if (isClient() && resource.data.customerId == request.auth.uid) || isStaff();
-        allow delete: if isStaff();
+      allow create: if (isClient() && request.resource.data.customerId == request.auth.uid) || isStaff();
+      allow read: if (isClient() && resource.data.customerId == request.auth.uid) || isStaff();
+      allow update: if (isClient() && resource.data.customerId == request.auth.uid) || isStaff();
+      allow delete: if isStaff();
     }
 
-    // Products & Services
+    // Products & Services: Readable by staff. Writable only by Admins,
+    // except for stock updates which any staff can do.
     match /products/{productId} {
       allow read: if isStaff();
       allow create, delete: if isAdmin();
@@ -88,23 +86,23 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Categories
+    // Categories: Readable by staff, writable by Admins.
     match /productCategories/{categoryId} {
-        allow read: if isStaff();
-        allow create, update, delete: if isAdmin();
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
     }
     match /serviceCategories/{categoryId} {
-        allow read: if isStaff();
-        allow create, update, delete: if isAdmin();
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
     }
 
-    // Stock Logs
+    // Stock Logs: Staff can create and read.
     match /stockLogs/{logId} {
-        allow create: if isStaff();
-        allow read: if isStaff();
+      allow create: if isStaff();
+      allow read: if isStaff();
     }
     
-    // Workshop operations
+    // Workshop operations: Staff can manage. Clients can read their own documents.
     match /appointments/{appointmentId} {
       allow read: if isStaff() || (isClient() && resource.data.customerId == request.auth.uid);
       allow write: if isStaff();
@@ -115,7 +113,7 @@ service cloud.firestore {
       allow read, delete: if isStaff();
     }
     
-    // Budgets
+    // Budgets: Admins can manage fully. Clients can manage their own.
     match /budgets/{budgetId} {
       allow read: if isAdmin() || (isClient() && resource.data.customerId == request.auth.uid);
       allow write: if isAdmin();
@@ -123,8 +121,8 @@ service cloud.firestore {
     }
 
     match /budgetRequests/{requestId} {
-        allow create: if isClient() && request.resource.data.customerId == request.auth.uid;
-        allow read, delete: if isAdmin();
+      allow create: if isClient() && request.resource.data.customerId == request.auth.uid;
+      allow read, delete: if isAdmin();
     }
     
     match /workOrders/{orderId} {
@@ -142,29 +140,31 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     
+    // Cash Register: Can be managed by any staff member.
     match /cashRegisterSessions/{sessionId} {
-      allow read, write: if isStaff() || (getUserRole() == 'Cajero');
+      allow read, write: if isStaff();
     }
     
     match /cashMovements/{movementId} {
-      allow read, write: if isStaff() || (getUserRole() == 'Cajero');
+      allow read, write: if isStaff();
     }
 
-    // Receipts can be read by clients
+    // Receipts: Writable by Admin, readable by staff and the specific client.
     match /receipts/{receiptId} {
       allow create: if isAdmin();
-      allow read: if isAdmin() || (isClient() && resource.data.customerId == request.auth.uid);
+      allow read: if isStaff() || (isClient() && resource.data.customerId == request.auth.uid);
     }
     
-    // Server-side logging
+    // Server-side logging: Allows write access for logging purposes from backend.
+    // Read/manage access is restricted to Admins.
     match /emailLogs/{logId} {
-        allow create: if true;
-        allow read, update, delete: if isAdmin();
+      allow create: if true; // Should be restricted to a service account if possible.
+      allow read, update, delete: if isAdmin();
     }
 
     match /sentEmails/{emailId} {
-        allow create: if true;
-        allow read, update, delete: if isAdmin();
+      allow create: if true; // Should be restricted to a service account if possible.
+      allow read, update, delete: if isAdmin();
     }
   }
 }

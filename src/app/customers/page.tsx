@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useTransition } from 'react';
@@ -29,6 +30,7 @@ import Link from 'next/link';
 import { AuthGuard } from '@/components/AuthGuard';
 import { fetchCustomers } from '@/lib/data';
 import { AddCustomerButton } from '@/components/AddCustomerButton';
+import { EditCustomerButton } from '@/components/EditCustomerButton';
 import { Customer } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/context/AuthContext';
@@ -154,10 +156,7 @@ export default function CustomersPage() {
                           </DropdownMenuItem>
                           {user?.role === 'Administrador' && (
                             <>
-                              <DropdownMenuItem>
-                                <Edit className="mr-2 h-4 w-4" />
-                                <span>Editar</span>
-                              </DropdownMenuItem>
+                              <EditCustomerButton customer={customer} onSuccess={loadCustomers} />
                               <DropdownMenuSeparator />
                               <TooltipProvider>
                                 <Tooltip>

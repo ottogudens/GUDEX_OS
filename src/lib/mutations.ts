@@ -1,477 +1,409 @@
 
-'use client';
+'use server';
+
+import {
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+  Timestamp,
+  writeBatch,
+  getDocs,
+  query,
+  where,
+  runTransaction,
+  addDoc,
+} from 'firebase/firestore';
 import { db } from './firebase';
-import { collection, doc, addDoc, setDoc, serverTimestamp, updateDoc, deleteDoc, writeBatch, query, where, getDocs, limit, Timestamp, runTransaction, increment } from 'firebase/firestore';
-import type { User, Customer, Product, Service, WorkshopSettings, ServiceCategory, ProductCategory, Camera, WorkOrder, Sale, CashMovement, AppointmentRequestFormData, Provider, ProviderPaymentFormData, Budget, BudgetRequest, Appointment } from './types';
-import { ProductFormData, ServiceFormData, ServiceCategoryFormData, ProductCategoryFormData, AddUserFormData, CameraFormData, EmailSettingsSchema, WorkOrderSchema, VehicleSchema, SaleSchema, ProviderSchema, ProviderPaymentSchema, PurchaseInvoiceFormData } from './schemas';
-import { z } from 'zod';
+import { storage } from './firebase';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { revalidatePath } from 'next/cache';
+import { Customer, Vehicle, Appointment, WorkOrder, Service, ServiceCategory, Product, Sale, Provider } from './types';
+import { VehicleFormData, WorkOrderFormData, ServiceSchema, ProductSchema, ProviderFormData } from './schemas';
+import * as z from 'zod';
 
-// Generic function to add a document to a collection
-export async function addDocument<T>(collectionName: string, data: T) {
+// =================================
+// CUSTOMER MUTATIONS
+// =================================
+
+export async function createCustomer(customerData: Omit<Customer, 'id' | 'createdAt' | 'vehicleCount' | 'lastVisit' | 'memberSince'>) {
+    try {
+        const newCustomerRef = doc(collection(db, 'customers'));
+        const newCustomer: Omit<Customer, 'id'> = {
+            ...customerData,
+            vehicleCount: 0,
+            lastVisit: 'N/A',
+            memberSince: new Date().toISOString().split('T')[0],
+            createdAt: serverTimestamp() as Timestamp,
+        };
+        await setDoc(newCustomerRef, newCustomer);
+        revalidatePath('/customers');
+        return { success: true, id: newCustomerRef.id };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function updateCustomer(customerId: string, customerData: Partial<Omit<Customer, 'id' | 'createdAt'>>) {
+    try {
+        const customerRef = doc(db, 'customers', customerId);
+        await updateDoc(customerRef, customerData);
+        revalidatePath('/customers');
+        revalidatePath(`/customers/${customerId}`);
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function deleteCustomer(customerId: string) {
+    try {
+        const vehiclesRef = collection(db, 'vehicles');
+        const q = query(vehiclesRef, where('customerId', '==', customerId));
+        const vehicleSnapshot = await getDocs(q);
+
+        if (!vehicleSnapshot.empty) {
+            throw new Error('This customer has associated vehicles and cannot be deleted.');
+        }
+
+        const customerRef = doc(db, 'customers', customerId);
+        await deleteDoc(customerRef);
+        revalidatePath('/customers');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+
+// =================================
+// VEHICLE MUTATIONS
+// =================================
+
+export async function updateVehicle(vehicleId: string, data: VehicleFormData, imageFile: File | null) {
+    try {
+        let imageUrl = data.imageUrl;
+
+        if (imageFile) {
+            const storageRef = ref(storage, `vehicles/${vehicleId}/${imageFile.name}`);
+            const snapshot = await uploadBytes(storageRef, imageFile);
+            imageUrl = await getDownloadURL(snapshot.ref);
+        }
+
+        const vehicleRef = doc(db, 'vehicles', vehicleId);
+        await updateDoc(vehicleRef, { ...data, imageUrl });
+
+        revalidatePath('/vehicles');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+
+export async function deleteVehicle(vehicleId: string): Promise<{ success: boolean; message?: string }> {
   try {
-    const docRef = await addDoc(collection(db, collectionName), {
-      ...data,
-      createdAt: serverTimestamp(),
-    });
-    return docRef.id;
-  } catch (error) {
-    console.error(`Error adding document to ${collectionName}:`, error);
-    throw new Error(`Failed to add document to ${collectionName}.`);
+    const vehicleRef = doc(db, 'vehicles', vehicleId);
+    
+    const workOrdersQuery = query(collection(db, 'workOrders'), where('vehicleId', '==', vehicleId), limit(1));
+    const workOrderSnapshot = await getDocs(workOrdersQuery);
+    if (!workOrderSnapshot.empty) {
+      return { success: false, message: 'No se puede eliminar un vehículo con órdenes de trabajo asociadas.' };
+    }
+
+    await deleteDoc(vehicleRef);
+    
+    try {
+      const imageRef = ref(storage, `vehicles/${vehicleId}`);
+    } catch (storageError) {
+      console.error("Could not delete vehicle image from storage:", storageError);
+    }
+
+    revalidatePath('/vehicles');
+    return { success: true };
+
+  } catch (error: any) {
+    console.error("Error deleting vehicle:", error);
+    return { success: false, message: error.message || 'No se pudo eliminar el vehículo.' };
   }
 }
 
-// Generic function to update a document in a collection
-export async function updateDocument<T>(collectionName: string, id: string, data: Partial<T>) {
-  try {
-    const docRef = doc(db, collectionName, id);
-    await updateDoc(docRef, {
-        ...data,
-        updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error(`Error updating document in ${collectionName}:`, error);
-    throw new Error(`Failed to update document in ${collectionName}.`);
-  }
-}
-
-// Generic function to delete a document from a collection
-export async function deleteDocument(collectionName: string, id: string) {
-    try {
-        const docRef = doc(db, collectionName, id);
-        await deleteDoc(docRef);
-    } catch (error) {
-        console.error(`Error deleting document from ${collectionName}:`, error);
-        throw new Error(`Failed to delete document from ${collectionName}.`);
-    }
-}
-
-// Customer Mutations
-export async function createCustomer(customerData: Omit<Customer, 'id'>) {
-    return addDocument('customers', customerData);
-}
-export async function updateCustomer(id: string, customerData: Partial<Customer>) {
-    return updateDocument('customers', id, customerData);
-}
-export async function deleteCustomer(id: string) {
-    // Note: You might want to handle what happens to their vehicles, etc.
-    return deleteDocument('customers', id);
-}
-
-// Product Mutations
-export async function createProduct(productData: ProductFormData) {
-    return addDocument('products', productData);
-}
-export async function updateProduct(id: string, productData: Partial<ProductFormData>) {
-    return updateDocument('products', id, productData);
-}
-export async function deleteProduct(id: string) {
-    return deleteDocument('products', id);
-}
-export async function updateProductStock(product: Product, newStock: number, user: {id: string, name: string}) {
-    const batch = writeBatch(db);
-
-    const productRef = doc(db, 'products', product.id);
-    batch.update(productRef, { stock: newStock });
-
-    const logRef = doc(collection(db, 'stockLogs'));
-    batch.set(logRef, { // This is already creating a log document
-        productId: product.id,
-        productName: product.name,
-        oldStock: product.stock,
-        newStock: newStock,
-        change: newStock - product.stock,
-        createdAt: serverTimestamp(),
-        createdBy: {
-            id: user.id,
-            name: user.name
-        }
-    });
-
-    await batch.commit();
-}
-
-
-// Service Mutations
-export async function createService(serviceData: ServiceFormData) {
-    return addDocument('services', serviceData);
-}
-export async function updateService(id: string, serviceData: Partial<ServiceFormData>) {
-    return updateDocument('services', id, serviceData);
-}
-export async function deleteService(id: string) {
-    return deleteDocument('services', id);
-}
-
-// Category Mutations
-export async function createServiceCategory(categoryData: ServiceCategoryFormData) {
-    return addDocument('serviceCategories', categoryData);
-}
-export async function updateServiceCategory(id: string, categoryData: Partial<ServiceCategoryFormData>) {
-    return updateDocument('serviceCategories', id, categoryData);
-}
-export async function deleteServiceCategory(id: string) {
-    // Note: You may want to handle sub-categories or re-assign services
-    return deleteDocument('serviceCategories', id);
-}
-
-export async function createProductCategory(categoryData: ProductCategoryFormData) {
-    return addDocument('productCategories', categoryData);
-}
-export async function updateProductCategory(id: string, categoryData: Partial<ProductCategoryFormData>) {
-    return updateDocument('productCategories', id, categoryData);
-}
-export async function deleteProductCategory(id: string) {
-    return deleteDocument('productCategories', id);
-}
-
-
-// Settings Mutations
-export async function updateWorkshopSettings(settingsData: Partial<WorkshopSettings>) {
-    try {
-        const settingsRef = doc(db, 'settings', 'profile');
-        await setDoc(settingsRef, settingsData, { merge: true });
-    } catch (error) {
-        console.error('Error updating workshop settings:', error);
-        throw new Error('Failed to update workshop settings.');
-    }
-}
-export async function updateEmailSettings(settingsData: z.infer<typeof EmailSettingsSchema>) {
-    try {
-        const settingsRef = doc(db, 'settings', 'email');
-        await setDoc(settingsRef, settingsData, { merge: true });
-    } catch (error) {
-        console.error('Error updating email settings:', error);
-        throw new Error('Failed to update email settings.');
-    }
-}
-
-// User Mutations
-export async function addUser(userData: AddUserFormData) {
-    try {
-        // Here you would typically call a Firebase Function to create the user in Firebase Auth
-        // and then add their profile to Firestore.
-        // For simplicity, we are just adding to the 'users' collection.
-        // This won't create an actual user that can log in.
-        return addDocument('users', userData);
-    } catch (error) {
-        console.error("Error adding user:", error);
-        throw new Error('Failed to add user.');
-    }
-}
-export async function updateUser(id: string, userData: Partial<User>) {
-    return updateDocument('users', id, userData);
-}
-export async function deleteUser(id: string) {
-    // Also delete from customers
-    const batch = writeBatch(db);
-    const userRef = doc(db, "users", id);
-    const customerRef = doc(db, "customers", id);
-
-    batch.delete(userRef);
-    batch.delete(customerRef);
-
-    await batch.commit();
-}
-
-// Camera Mutations
-export async function createCamera(cameraData: CameraFormData) {
-    return addDocument('cameras', cameraData);
-}
-export async function updateCamera(id: string, cameraData: Partial<CameraFormData>) {
-    return updateDocument('cameras', id, cameraData);
-}
-export async function deleteCamera(id: string) {
-    return deleteDocument('cameras', id);
-}
-
-// Vehicle Mutations
-export async function createVehicle(vehicleData: z.infer<typeof VehicleSchema>) {
-    try {
-        // Note: We might want to use a transaction to update the customer's vehicleCount
-        return addDocument('vehicles', vehicleData);
-    } catch (error) {
-        console.error("Error creating vehicle:", error);
-        throw new Error('Failed to create vehicle.');
-    }
-}
-export async function updateVehicle(id: string, vehicleData: Partial<z.infer<typeof VehicleSchema>>) {
-    return updateDocument('vehicles', id, vehicleData);
-}
-export async function deleteVehicle(id: string) {
-    return deleteDocument('vehicles', id);
-}
-
-// Work Order Mutations
-export async function createWorkOrder(workOrderData: z.infer<typeof WorkOrderSchema>) {
-    try {
-        const dataWithTimestamp = {
-            ...workOrderData,
-            status: 'backlog',
-            createdAt: serverTimestamp(),
-        };
-        const workOrderRef = await addDoc(collection(db, "workOrders"), dataWithTimestamp);
-        return workOrderRef.id;
-    } catch (error) {
-        console.error("Error creating work order:", error);
-        throw new Error("Failed to create work order.");
-    }
-}
-
-export async function updateWorkOrder(id: string, workOrderData: Partial<WorkOrder>) {
-    return updateDocument('workOrders', id, workOrderData);
-}
-
-export async function deleteWorkOrder(id: string) {
-    return deleteDocument('workOrders', id);
-}
-
-// Sale and Payment Mutations
-export async function createSale(saleData: z.infer<typeof SaleSchema>) {
-     const batch = writeBatch(db);
-     
-     // 1. Create the sale document
-     const saleRef = doc(collection(db, "sales"));
-     batch.set(saleRef, {
-        ...saleData,
-        createdAt: serverTimestamp(),
-     });
-
-     // 2. Create the receipt document
-     const receiptRef = doc(collection(db, "receipts"));
-     batch.set(receiptRef, {
-        saleId: saleRef.id,
-        customerId: saleData.customerId,
-        customerName: saleData.customerName,
-        total: saleData.total,
-        items: saleData.items,
-        createdAt: serverTimestamp(),
-     });
-
-     // 3. Update stock for each product in the sale
-     saleData.items.forEach(item => {
-        if (item.itemType === 'product') {
-            const productRef = doc(db, 'products', item.id);
-            // This is a simplified stock update. For a real app, you should use a transaction
-            // to read the current stock and then update it to avoid race conditions.
-            // For now, we assume stock is sufficient. This is a potential area for improvement.
-            // const newStock = serverTimestamp.increment(-item.quantity);
-            // batch.update(productRef, { stock: newStock });
-            
-            // The above is more complex. For now, we'll need to read the product first.
-            // This logic should be moved to a transaction for production.
-            // For now, we will skip the stock update to avoid read-then-write complexity here.
-        }
-     });
-
-    // 4. Update work order status if linked
-    if (saleData.workOrderId) {
-        const workOrderRef = doc(db, 'workOrders', saleData.workOrderId);
-        batch.update(workOrderRef, { status: 'completed' });
-    }
-
-     await batch.commit();
-     return saleRef.id;
-}
-
-
-export async function addCashMovement(sessionId: string, amount: number, description: string, type: 'income' | 'expense', createdBy: { id: string; name: string; }) {
-    try {
-        const movementData = {
-            sessionId,
-            amount,
-            description,
-            type,
-            createdBy,
-            createdAt: serverTimestamp(),
-        };
-        return addDocument('cashMovements', movementData);
-    } catch(e) {
-        console.error(e);
-        throw new Error('Failed to add cash movement.');
-    }
-}
-
-// Appointment Mutations
-export async function createAppointmentRequest(appointmentData: AppointmentRequestFormData) {
-    try {
-        const dataWithTimestamp = {
-            ...appointmentData,
-            requestedDate: Timestamp.fromDate(new Date(appointmentData.requestedDate)),
-            status: 'Pendiente',
-            createdAt: serverTimestamp(),
-        };
-        const docRef = await addDoc(collection(db, "appointmentRequests"), dataWithTimestamp);
-        return docRef.id;
-    } catch (error) {
-        console.error("Error creating appointment request:", error);
-        throw new Error("Failed to create appointment request.");
-    }
-}
+// =================================
+// APPOINTMENT MUTATIONS
+// =================================
 
 export async function confirmAppointment(appointmentData: Omit<Appointment, 'id' | 'createdAt'>, requestId: string) {
-    const batch = writeBatch(db);
+    return runTransaction(db, async (transaction) => {
+        const newAppointmentRef = doc(collection(db, 'appointments'));
+        const requestRef = doc(db, 'appointmentRequests', requestId);
 
-    const appointmentRef = doc(collection(db, 'appointments'));
-    batch.set(appointmentRef, {
-        ...appointmentData,
-        appointmentDate: Timestamp.fromDate(new Date(appointmentData.appointmentDate)),
-        createdAt: serverTimestamp(),
-    });
+        const newAppointment = {
+            ...appointmentData,
+            createdAt: serverTimestamp() as Timestamp,
+        };
 
-    const requestRef = doc(db, 'appointmentRequests', requestId);
-    batch.delete(requestRef);
-
-    await batch.commit();
-}
-
-
-// Provider Mutations
-export async function createProvider(providerData: z.infer<typeof ProviderSchema>) {
-    return addDocument('providers', providerData);
-}
-
-export async function updateProvider(id: string, providerData: Partial<Provider>) {
-    return updateDocument('providers', id, providerData);
-}
-
-export async function deleteProvider(id: string) {
-    return deleteDocument('providers', id);
-}
-
-export async function createProviderPayment(paymentData: ProviderPaymentFormData) {
-    return addDocument('providerPayments', paymentData);
-}
-
-// Budget and Budget Request Mutations
-export async function createBudget(budgetData: Omit<Budget, 'id' | 'createdAt'>) {
-    return addDocument('budgets', budgetData);
-}
-
-export async function updateBudget(id:string, budgetData: Partial<Omit<Budget, 'id' | 'createdAt'>>) {
-    return updateDocument('budgets', id, budgetData);
-}
-
-export async function createBudgetRequest(requestData: Omit<BudgetRequest, 'id' | 'createdAt' | 'status'>) {
-    const dataWithStatus = {
-      ...requestData,
-      status: 'Pendiente' as const,
-    };
-    return addDocument('budgetRequests', dataWithStatus);
-}
-
-
-// Cash Register Mutations
-export async function openCashRegister(initialAmount: number, userId: string, userName: string) {
-    if (initialAmount <= 0) {
-      throw new Error('El monto de apertura debe ser un número positivo.');
-    }
-    
-    const sessionsCol = collection(db, 'cashRegisterSessions');
-    const q = query(sessionsCol, where('status', '==', 'open'), limit(1));
-    const snapshot = await getDocs(q);
-
-    if (!snapshot.empty) {
-        throw new Error('Ya hay una caja abierta. Por favor, ciérrala antes de abrir una nueva.');
-    }
-
-    await addDoc(sessionsCol, {
-        status: 'open',
-        initialAmount,
-        openedAt: serverTimestamp(),
-        openedBy: { id: userId, name: userName },
+        transaction.set(newAppointmentRef, newAppointment);
+        transaction.delete(requestRef);
+    }).then(() => {
+        revalidatePath('/appointments');
+        return { success: true };
+    }).catch((error: any) => {
+        return { success: false, message: error.message };
     });
 }
 
-interface UserInfo {
-    id: string;
-    name: string;
-}
-
-interface FinalAmounts {
-    cash: number;
-    card: number;
-    transfer: number;
-}
-
-interface CloseCashRegisterParams {
-    sessionId: string;
-    finalAmounts: FinalAmounts;
-    closedBy: UserInfo;
-    summary: {
-        totalSales: number;
-        cashSales: number;
-        cardSales: number;
-        transferSales: number;
-        manualIncome: number;
-        manualExpense: number;
-        expectedInCash: number;
-    };
-}
-
-export async function closeCashRegister(params: CloseCashRegisterParams) {
-    const { sessionId, finalAmounts, closedBy, summary } = params;
-
-    if (!sessionId) {
-        throw new Error("Session ID is required.");
-    }
-
-    const sessionRef = doc(db, 'cashRegisterSessions', sessionId);
-
+export async function createAppointment(appointmentData: Omit<Appointment, 'id' | 'createdAt'>) {
     try {
-        await updateDoc(sessionRef, {
-            status: 'closed',
-            closedAt: serverTimestamp(),
-            closedBy: closedBy,
-            closingAmount: finalAmounts,
-            expectedAmount: {
-                cash: summary.expectedInCash,
-                card: summary.cardSales,
-                transfer: summary.transferSales,
-            },
-            summary: {
-                totalSales: summary.totalSales,
-                cashSales: summary.cashSales,
-                cardSales: summary.cardSales,
-                transferSales: summary.transferSales,
-                manualIncome: summary.manualIncome,
-                manualExpense: summary.manualExpense,
-            },
-            discrepancy: {
-                cash: finalAmounts.cash - summary.expectedInCash,
-                card: finalAmounts.card - summary.cardSales,
-                transfer: finalAmounts.transfer - summary.transferSales,
-            },
-        });
-    } catch (error) {
-        console.error("Error updating cash register session document:", error);
-        throw new Error(`Failed to update Firestore document: ${error.message}`);
+        const newAppointmentRef = doc(collection(db, 'appointments'));
+        const newAppointment = {
+            ...appointmentData,
+            createdAt: serverTimestamp() as Timestamp,
+        };
+        await setDoc(newAppointmentRef, newAppointment);
+        revalidatePath('/appointments');
+        return { success: true, id: newAppointmentRef.id };
+    } catch (error: any) {
+        return { success: false, message: error.message };
     }
 }
 
-// Purchase Invoice Mutations
-export async function createPurchaseInvoice(invoiceData: PurchaseInvoiceFormData) {
-    const batch = writeBatch(db);
+// =================================
+// WORK ORDER MUTATIONS
+// =================================
 
-    // 1. Create the purchase invoice document
-    const invoiceRef = doc(collection(db, "purchaseInvoices"));
-    const totalAmount = invoiceData.items.reduce((acc, item) => acc + (item.quantity * item.purchasePrice), 0);
-    
-    batch.set(invoiceRef, {
-        ...invoiceData,
-        totalAmount,
-        status: 'Pendiente', // or 'Pagada' depending on business logic
-        createdAt: serverTimestamp(),
-    });
+export async function createWorkOrder(data: WorkOrderFormData) {
+    try {
+        const total = data.items.reduce((acc, item) => acc + item.price * item.quantity, 0);
+        const newWorkOrderRef = collection(db, 'workOrders');
+        const workOrder: Omit<WorkOrder, 'id'> = {
+            ...data,
+            code: Math.random().toString(36).substr(2, 9).toUpperCase(),
+            status: 'backlog',
+            total,
+            createdAt: serverTimestamp() as Timestamp,
+        };
+        await addDoc(newWorkOrderRef, workOrder);
+        revalidatePath('/work-orders');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
 
-    // 2. Update stock and purchase price for each product
-    invoiceData.items.forEach(item => {
-        const productRef = doc(db, 'products', item.productId);
-        batch.update(productRef, {
-            stock: increment(item.quantity),
-            purchasePrice: item.purchasePrice, // Update the purchase price to the latest one
+export async function updateWorkOrderStatus(workOrderId: string, status: WorkOrder['status']) {
+    try {
+        const workOrderRef = doc(db, 'workOrders', workOrderId);
+        await updateDoc(workOrderRef, { status });
+        revalidatePath('/work-orders');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+// =================================
+// SERVICE MUTATIONS
+// =================================
+
+export async function createService(data: z.infer<typeof ServiceSchema>) {
+    try {
+        const newServiceRef = doc(collection(db, 'services'));
+        const newService = {
+            ...data,
+            code: Math.random().toString(36).substr(2, 9).toUpperCase(),
+        };
+        await setDoc(newServiceRef, newService);
+        revalidatePath('/services');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function updateService(serviceId: string, data: z.infer<typeof ServiceSchema>) {
+    try {
+        const serviceRef = doc(db, 'services', serviceId);
+        await updateDoc(serviceRef, data);
+        revalidatePath('/services');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function deleteService(serviceId: string) {
+    try {
+        const serviceRef = doc(db, 'services', serviceId);
+        await deleteDoc(serviceRef);
+        revalidatePath('/services');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function createServiceCategory(data: Partial<ServiceCategory>) {
+    try {
+        const newCategoryRef = doc(collection(db, 'serviceCategories'));
+        await setDoc(newCategoryRef, data);
+        revalidatePath('/services');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+// =================================
+// PRODUCT MUTATIONS
+// =================================
+
+export async function createProduct(data: z.infer<typeof ProductSchema>) {
+    try {
+        const newProductRef = doc(collection(db, 'products'));
+        const newProduct = {
+            ...data,
+            code: Math.random().toString(36).substr(2, 9).toUpperCase(),
+        };
+        await setDoc(newProductRef, newProduct);
+        revalidatePath('/products');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function updateProduct(productId: string, data: z.infer<typeof ProductSchema>, imageFile: File | null) {
+    try {
+        let imageUrl = data.imageUrl;
+
+        if (imageFile) {
+            const storageRef = ref(storage, `products/${productId}/${imageFile.name}`);
+            const snapshot = await uploadBytes(storageRef, imageFile);
+            imageUrl = await getDownloadURL(snapshot.ref);
+        }
+
+        const productRef = doc(db, 'products', productId);
+        await updateDoc(productRef, { ...data, imageUrl });
+
+        revalidatePath('/products');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function deleteProduct(productId: string) {
+    try {
+        const productRef = doc(db, 'products', productId);
+        await deleteDoc(productRef);
+        revalidatePath('/products');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function updateProductStock(product: Product, newStock: number, user: { id: string; name: string }) {
+    try {
+        const productRef = doc(db, 'products', product.id);
+        const stockLogRef = doc(collection(db, 'stockLogs'));
+
+        const batch = writeBatch(db);
+
+        batch.update(productRef, { stock: newStock });
+        batch.set(stockLogRef, {
+            productId: product.id,
+            productCode: product.code,
+            productName: product.name,
+            oldStock: product.stock,
+            newStock,
+            change: newStock - product.stock,
+            reason: 'Toma de Inventario',
+            user,
+            createdAt: serverTimestamp()
         });
-    });
-    
-    await batch.commit();
-    return invoiceRef.id;
+
+        await batch.commit();
+
+        revalidatePath('/inventory/stock-take');
+        revalidatePath('/inventory/records');
+
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+// =================================
+// SALE MUTATIONS
+// =================================
+
+export async function createSale(saleData: Omit<Sale, 'id' | 'createdAt'>) {
+    try {
+        const newSaleRef = doc(collection(db, 'sales'));
+        const newSale = {
+            ...saleData,
+            createdAt: serverTimestamp() as Timestamp,
+        };
+        await setDoc(newSaleRef, newSale);
+        
+        const batch = writeBatch(db);
+        saleData.items.forEach(item => {
+            if (item.itemType === 'product') {
+                const productRef = doc(db, 'products', item.id);
+                batch.update(productRef, { stock: -item.quantity });
+            }
+        });
+        await batch.commit();
+
+        revalidatePath('/pos');
+        revalidatePath('/sales/summary');
+        
+        return { success: true, id: newSaleRef.id };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+// =================================
+// PROVIDER MUTATIONS
+// =================================
+
+export async function createProvider(data: ProviderFormData) {
+    try {
+        const newProviderRef = doc(collection(db, 'providers'));
+        const newProvider: Omit<Provider, 'id'> = {
+            ...data,
+            createdAt: serverTimestamp() as Timestamp,
+        };
+        await setDoc(newProviderRef, newProvider);
+        revalidatePath('/purchases/providers');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function updateProvider(providerId: string, data: ProviderFormData) {
+    try {
+        const providerRef = doc(db, 'providers', providerId);
+        await updateDoc(providerRef, data);
+        revalidatePath('/purchases/providers');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function deleteProvider(providerId: string) {
+    try {
+        const providerRef = doc(db, 'providers', providerId);
+        await deleteDoc(providerRef);
+        revalidatePath('/purchases/providers');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
 }

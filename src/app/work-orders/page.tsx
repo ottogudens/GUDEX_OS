@@ -22,6 +22,12 @@ import {
   DialogTrigger,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -94,9 +100,18 @@ const WorkOrderCard = ({ order, onStatusChange }: { order: WorkOrder; onStatusCh
                 <CardTitle className="text-base font-semibold leading-tight pr-2">
                 {order.title}
                 </CardTitle>
-                <Button variant="ghost" size="icon" className="w-6 h-6 -mt-1 -mr-1 flex-shrink-0">
-                <MoreHorizontal className="w-4 h-4" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="w-6 h-6 -mt-1 -mr-1 flex-shrink-0">
+                        <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem asChild>
+                        <Link href={`/work-orders/${order.id}`}>Ver Detalles</Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
                 #{order.code} &bull; {order.vehicle}

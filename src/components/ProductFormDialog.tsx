@@ -1,314 +1,208 @@
 
 "use client";
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useTransition, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
-import { Package } from 'lucide-react';
-import type { Product, ProductCategory } from '@/lib/types';
-import { createProduct, updateProduct, createProductCategory } from '@/lib/mutations';
-import { ProductSchema } from '@/lib/schemas';
-import { lookupBarcode } from '@/lib/barcode-data';
-import Image from 'next/image';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Product, ProductCategory } from '@/lib/types';
+import { ProductSchema, ProductFormData } from '@/lib/schemas';
+import { createProduct, updateProduct } from '@/lib/mutations';
+import { useToast } from '@/hooks/use-toast';
 import { fetchProductCategories } from '@/lib/data';
-
-const initialProductState: Partial<Product> = {
-  name: '',
-  brand: '',
-  category: '',
-  subcategory: '',
-  purchasePrice: 0,
-  salePrice: 0,
-  stock: 0,
-  barcode: '',
-  imageUrl: '',
-  visibleInPOS: false,
-};
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from './ui/scroll-area';
 
 interface ProductFormDialogProps {
-    isOpen: boolean;
-    onOpenChange: (open: boolean) => void;
-    isEditing?: boolean;
-    initialProductData?: Partial<Product> | null;
-    onSuccess: () => void;
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  isEditing: boolean;
+  initialProductData: Partial<Product> | null;
+  onSuccess: () => void;
 }
 
-export function ProductFormDialog({ 
-    isOpen, 
-    onOpenChange, 
-    isEditing = false, 
-    initialProductData, 
-    onSuccess 
+export function ProductFormDialog({
+  isOpen,
+  onOpenChange,
+  isEditing,
+  initialProductData,
+  onSuccess,
 }: ProductFormDialogProps) {
-    
-    const [isPending, startTransition] = useTransition();
-    const [currentProduct, setCurrentProduct] = useState<Partial<Product>>(initialProductState);
-    const [imagePreview, setImagePreview] = useState<string | null>(null);
-    const [imageFile, setImageFile] = useState<File | null>(null);
-    const { toast } = useToast();
+  const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
 
-    // State for categories
-    const [categories, setCategories] = useState<ProductCategory[]>([]);
-    const [isCreatingCategory, setIsCreatingCategory] = useState(false);
-    const [newCategoryName, setNewCategoryName] = useState('');
-    const [isCreatingSubcategory, setIsCreatingSubcategory] = useState(false);
-    const [newSubcategoryName, setNewSubcategoryName] = useState('');
+  const {
+    control,
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    formState: { errors },
+  } = useForm<ProductFormData>({
+    resolver: zodResolver(ProductSchema),
+  });
 
-    const loadCategories = async () => {
-        try {
-            const catData = await fetchProductCategories();
-            setCategories(catData);
-        } catch (error) {
-            toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar las categorías.' });
-        }
-    };
+  const selectedCategoryName = watch('category');
 
-    useEffect(() => {
-        if (isOpen) {
-            const data = initialProductData ? { ...initialProductState, ...initialProductData } : initialProductState;
-            setCurrentProduct(data);
-            setImagePreview(data.imageUrl || null);
-            setImageFile(null);
-            loadCategories();
+  const selectedCategory = useMemo(() => {
+    return categories.find(c => c.name === selectedCategoryName);
+  }, [categories, selectedCategoryName]);
+
+  useEffect(() => {
+    async function loadCategories() {
+      const fetchedCategories = await fetchProductCategories();
+      setCategories(fetchedCategories);
+    }
+    loadCategories();
+  }, []);
+  
+  useEffect(() => {
+    if (initialProductData) {
+      reset(initialProductData);
+    } else {
+      reset({
+        name: '',
+        brand: '',
+        salePrice: 0,
+        purchasePrice: 0,
+        stock: 0,
+        barcode: '',
+        category: '',
+        subcategory: '',
+        visibleInPOS: false,
+      });
+    }
+  }, [initialProductData, reset]);
+
+  const onSubmit = (data: ProductFormData) => {
+    startTransition(async () => {
+      try {
+        if (isEditing && initialProductData?.id) {
+          await updateProduct(initialProductData.id, data, null);
+          toast({ title: 'Éxito', description: 'Producto actualizado.' });
         } else {
-            // Reset creation states when dialog closes
-            setIsCreatingCategory(false);
-            setNewCategoryName('');
-            setIsCreatingSubcategory(false);
-            setNewSubcategoryName('');
+          await createProduct(data);
+          toast({ title: 'Éxito', description: 'Producto creado.' });
         }
-    }, [isOpen, initialProductData]);
-    
-    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { id, value, type } = e.target;
-        setCurrentProduct(prev => ({ 
-          ...prev, 
-          [id]: type === 'number' ? parseFloat(value) || 0 : value
-        }));
-    };
-
-    const handleSwitchChange = (checked: boolean) => {
-        setCurrentProduct(prev => ({ ...prev, visibleInPOS: checked }));
-    };
-
-    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            setImageFile(file);
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setImagePreview(reader.result as string);
-            };
-            reader.readAsDataURL(file);
-        }
-    };
-    
-    const handleBarcodeBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
-        const barcode = e.target.value;
-        if (!barcode || currentProduct.name) return;
-        
-        toast({ title: 'Buscando código de barras...' });
-        const result = await lookupBarcode(barcode);
-        if (result) {
-            toast({ title: '¡Producto encontrado!', description: result.name });
-            setCurrentProduct(prev => ({ ...prev, name: result.name, imageUrl: result.imageUrl }));
-            setImagePreview(result.imageUrl);
-        } else {
-            toast({ variant: 'destructive', title: 'No encontrado', description: 'No se encontró un producto para ese código.'});
-        }
-    };
-
-    const handleFormSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-
-        startTransition(async () => {
-            try {
-                let categoryToSave = currentProduct.category || '';
-                let subcategoryToSave = currentProduct.subcategory || '';
-                let parentCategoryId: string | null = null;
-                
-                if (isCreatingCategory && newCategoryName.trim()) {
-                    await createProductCategory({ name: newCategoryName.trim() });
-                    categoryToSave = newCategoryName.trim();
-                    const updatedCategories = await fetchProductCategories();
-                    setCategories(updatedCategories);
-                    const newCat = updatedCategories.find(c => c.name === categoryToSave);
-                    if (newCat) parentCategoryId = newCat.id;
-                } else if (categoryToSave) {
-                    const parentCat = categories.find(c => c.name === categoryToSave);
-                    if (parentCat) parentCategoryId = parentCat.id;
-                }
-
-                if (isCreatingSubcategory && newSubcategoryName.trim() && parentCategoryId) {
-                     await createProductCategory({ name: newSubcategoryName.trim(), parentId: parentCategoryId });
-                     subcategoryToSave = newSubcategoryName.trim();
-                }
-
-                const finalProductData = {
-                    ...currentProduct,
-                    category: categoryToSave,
-                    subcategory: subcategoryToSave,
-                };
-                
-                const validatedFields = ProductSchema.safeParse(finalProductData);
-
-                if (!validatedFields.success) {
-                    toast({ variant: 'destructive', title: 'Error de Validación', description: Object.values(validatedFields.error.flatten().fieldErrors).flat().join(', ') });
-                    return;
-                }
-                
-                const dataToSave = validatedFields.data;
-                if (isEditing && currentProduct.id) {
-                    await updateProduct(currentProduct.id, dataToSave, imageFile);
-                    toast({ title: 'Éxito', description: 'Producto actualizado correctamente.' });
-                } else {
-                    await createProduct(dataToSave, imageFile);
-                    toast({ title: 'Éxito', description: 'Producto creado correctamente.' });
-                }
-                onSuccess();
-            } catch (error: any) {
-                 toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudo guardar el producto.' });
-            }
+        onSuccess();
+      } catch (error: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: error.message || 'No se pudo guardar el producto.',
         });
-    };
-    
-    const selectedCategoryData = categories.find(c => c.name === currentProduct.category);
+      }
+    });
+  };
 
-    return (
-        <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[600px]">
-                <DialogHeader>
-                    <DialogTitle>{isEditing ? 'Editar Producto' : 'Crear Nuevo Producto'}</DialogTitle>
-                    <DialogDescription>Completa la información del producto.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleFormSubmit}>
-                    <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-3 items-center gap-4">
-                            <div className="col-span-1">
-                                <Label htmlFor="picture">Imagen</Label>
-                                <div className="mt-2 aspect-square w-full border border-dashed rounded-lg flex items-center justify-center relative">
-                                    {imagePreview ? (
-                                        <Image src={imagePreview} alt="Vista previa" layout="fill" className="object-cover rounded-lg"/>
-                                    ) : (
-                                        <Package className="w-16 h-16 text-muted-foreground"/>
-                                    )}
-                                    <Input id="picture" type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*" onChange={handleImageChange} />
-                                </div>
-                            </div>
-                            <div className="col-span-2 space-y-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="barcode">Código de Barras (Opcional)</Label>
-                                    <Input id="barcode" placeholder="Escanear o tipear código" value={currentProduct.barcode || ''} onChange={handleFormChange} onBlur={handleBarcodeBlur} />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="name">Nombre del Producto</Label>
-                                        <Input id="name" placeholder="ej. Filtro de Aceite" value={currentProduct.name || ''} onChange={handleFormChange} required />
-                                    </div>
-                                     <div className="grid gap-2">
-                                        <Label htmlFor="brand">Marca (Opcional)</Label>
-                                        <Input id="brand" placeholder="ej. Bosch" value={currentProduct.brand || ''} onChange={handleFormChange} />
-                                    </div>
-                                </div>
-                            </div>
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{isEditing ? 'Editar Producto' : 'Crear Nuevo Producto'}</DialogTitle>
+          <DialogDescription>
+            {isEditing ? 'Modifica los detalles del producto.' : 'Completa el formulario para añadir un nuevo producto.'}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)}>
+            <ScrollArea className="max-h-[70vh] p-1">
+                <div className="grid gap-4 py-4 px-6">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="name">Nombre</Label>
+                            <Input id="name" {...register('name')} />
+                            {errors.name && <p className="text-red-500 text-xs">{errors.name.message}</p>}
                         </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="category">Categoría</Label>
-                                <Select
-                                    value={isCreatingCategory ? 'create_new' : currentProduct.category || ''}
-                                    onValueChange={(value) => {
-                                        if (value === 'create_new') {
-                                            setIsCreatingCategory(true);
-                                            setCurrentProduct(prev => ({ ...prev, category: '', subcategory: '' }));
-                                        } else {
-                                            setIsCreatingCategory(false);
-                                            setCurrentProduct(prev => ({ ...prev, category: value, subcategory: '' }));
-                                        }
-                                    }}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecciona una categoría" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {categories.map(cat => <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>)}
-                                        <SelectItem value="create_new">+ Crear nueva categoría</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                {isCreatingCategory && (
-                                    <Input 
-                                        placeholder="Nombre de la nueva categoría"
-                                        value={newCategoryName}
-                                        onChange={(e) => setNewCategoryName(e.target.value)}
-                                        className="mt-2"
-                                    />
-                                )}
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="subcategory">Subcategoría (Opcional)</Label>
-                                <Select
-                                    value={isCreatingSubcategory ? 'create_new_sub' : currentProduct.subcategory || ''}
-                                    onValueChange={(value) => {
-                                        if (value === 'create_new_sub') {
-                                            setIsCreatingSubcategory(true);
-                                            setCurrentProduct(prev => ({...prev, subcategory: ''}));
-                                        } else {
-                                            setIsCreatingSubcategory(false);
-                                            setCurrentProduct(prev => ({...prev, subcategory: value}));
-                                        }
-                                    }}
-                                    disabled={!selectedCategoryData || isCreatingCategory}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder={!selectedCategoryData ? "Selecciona categoría" : "Selecciona subcategoría"} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {selectedCategoryData?.subcategories?.map(sub => (
-                                            <SelectItem key={sub.id} value={sub.name}>{sub.name}</SelectItem>
-                                        ))}
-                                        {selectedCategoryData && <SelectItem value="create_new_sub">+ Crear nueva subcategoría</SelectItem>}
-                                    </SelectContent>
-                                </Select>
-                                {isCreatingSubcategory && (
-                                    <Input
-                                        placeholder="Nombre de la nueva subcategoría"
-                                        value={newSubcategoryName}
-                                        onChange={e => setNewSubcategoryName(e.target.value)}
-                                        className="mt-2"
-                                    />
-                                )}
-                            </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="brand">Marca</Label>
+                            <Input id="brand" {...register('brand')} />
                         </div>
-                        <div className="grid grid-cols-3 gap-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="purchasePrice">Precio Compra (Neto)</Label>
-                                <Input id="purchasePrice" type="number" step="1" value={currentProduct.purchasePrice || ''} onChange={handleFormChange} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="salePrice">Precio Venta</Label>
-                                <Input id="salePrice" type="number" step="1" value={currentProduct.salePrice || ''} onChange={handleFormChange} required />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="stock">Stock Actual</Label>
-                                <Input id="stock" type="number" step="1" value={currentProduct.stock || ''} onChange={handleFormChange} required />
-                            </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            <Switch id="visibleInPOS" checked={!!currentProduct.visibleInPOS} onCheckedChange={handleSwitchChange} />
-                            <Label htmlFor="visibleInPOS">Visible en Punto de Venta (POS)</Label>
-                        </div>
-                        <Button type="submit" className="w-full" disabled={isPending}>
-                            {isPending ? 'Guardando...' : 'Guardar Producto'}
-                        </Button>
                     </div>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
+                    <div className="grid grid-cols-2 gap-4">
+                         <div className="grid gap-2">
+                            <Label htmlFor="category">Categoría</Label>
+                            <Controller
+                                name="category"
+                                control={control}
+                                render={({ field }) => (
+                                    <Select onValueChange={field.onChange} value={field.value}>
+                                        <SelectTrigger><SelectValue placeholder="Selecciona una categoría" /></SelectTrigger>
+                                        <SelectContent>
+                                            {categories.map(cat => <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            />
+                             {errors.category && <p className="text-red-500 text-xs">{errors.category.message}</p>}
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="subcategory">Subcategoría</Label>
+                            <Controller
+                                name="subcategory"
+                                control={control}
+                                render={({ field }) => (
+                                    <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCategory}>
+                                        <SelectTrigger><SelectValue placeholder="Selecciona una subcategoría" /></SelectTrigger>
+                                        <SelectContent>
+                                            {selectedCategory?.subcategories?.map(sub => <SelectItem key={sub.id} value={sub.name}>{sub.name}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                            />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="purchasePrice">Precio Compra</Label>
+                            <Input id="purchasePrice" type="number" {...register('purchasePrice', { valueAsNumber: true })} />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="salePrice">Precio Venta</Label>
+                            <Input id="salePrice" type="number" {...register('salePrice', { valueAsNumber: true })} />
+                            {errors.salePrice && <p className="text-red-500 text-xs">{errors.salePrice.message}</p>}
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="stock">Stock</Label>
+                            <Input id="stock" type="number" {...register('stock', { valueAsNumber: true })} />
+                            {errors.stock && <p className="text-red-500 text-xs">{errors.stock.message}</p>}
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="barcode">Código de Barras</Label>
+                            <Input id="barcode" {...register('barcode')} />
+                        </div>
+                    </div>
+                     <div className="flex items-center space-x-2 pt-4">
+                        <Controller
+                            name="visibleInPOS"
+                            control={control}
+                            render={({ field }) => (
+                                <Switch id="visibleInPOS" checked={field.value} onCheckedChange={field.onChange} />
+                            )}
+                        />
+                        <Label htmlFor="visibleInPOS">Visible en Punto de Venta (POS)</Label>
+                    </div>
+                </div>
+            </ScrollArea>
+             <DialogFooter className="pt-6 border-t">
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+                <Button type="submit" disabled={isPending}>{isPending ? 'Guardando...' : 'Guardar'}</Button>
+            </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }

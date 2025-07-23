@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useTransition, useMemo } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -34,6 +34,16 @@ import {
   DialogTrigger,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AuthGuard } from '@/components/AuthGuard';
@@ -42,7 +52,7 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Service, ServiceCategory } from '@/lib/types';
 import { fetchServices, fetchServiceCategories as fetchCategories } from '@/lib/data';
-import { createService, updateService, deleteService as deleteServiceMutation, createServiceCategory } from '@/lib/mutations';
+import { createService, updateService, deleteService as deleteServiceMutation } from '@/lib/mutations';
 import { ServiceSchema } from '@/lib/schemas';
 import * as XLSX from 'xlsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -63,12 +73,7 @@ export default function ServicesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentService, setCurrentService] = useState<Partial<Service>>(initialServiceState);
-  
-  // State for dynamic category creation
-  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [isCreatingSubcategory, setIsCreatingSubcategory] = useState(false);
-  const [newSubcategoryName, setNewSubcategoryName] = useState('');
+  const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null);
 
   const { toast } = useToast();
 
@@ -93,24 +98,15 @@ export default function ServicesPage() {
     loadData();
   }, []);
 
-  const resetCreationStates = () => {
-    setIsCreatingCategory(false);
-    setNewCategoryName('');
-    setIsCreatingSubcategory(false);
-    setNewSubcategoryName('');
-  };
-
   const openDialogForNew = () => {
     setIsEditing(false);
     setCurrentService(initialServiceState);
-    resetCreationStates();
     setIsDialogOpen(true);
   };
 
   const openDialogForEdit = (service: Service) => {
     setIsEditing(true);
     setCurrentService(service);
-    resetCreationStates();
     setIsDialogOpen(true);
   };
   
@@ -130,36 +126,7 @@ export default function ServicesPage() {
     e.preventDefault();
     startTransition(async () => {
         try {
-            let categoryToSave = currentService.category || '';
-            let subcategoryToSave = currentService.subcategory || '';
-            let parentCategoryId: string | null = null;
-            
-            if (isCreatingCategory && newCategoryName.trim()) {
-                await createServiceCategory({ name: newCategoryName.trim(), availableInPOS: true });
-                categoryToSave = newCategoryName.trim();
-                const updatedCategories = await fetchCategories();
-                setCategories(updatedCategories);
-                const newCat = updatedCategories.find(c => c.name === categoryToSave);
-                if (newCat) parentCategoryId = newCat.id;
-            } else if (categoryToSave) {
-                const parentCat = categories.find(c => c.name === categoryToSave);
-                if (parentCat) parentCategoryId = parentCat.id;
-            }
-
-            if (isCreatingSubcategory && newSubcategoryName.trim() && parentCategoryId) {
-                 await createServiceCategory({ name: newSubcategoryName.trim(), parentId: parentCategoryId, availableInPOS: true });
-                 subcategoryToSave = newSubcategoryName.trim();
-            }
-
-            const finalServiceData = {
-                name: currentService.name,
-                category: categoryToSave,
-                subcategory: subcategoryToSave,
-                price: currentService.price,
-                availableInPOS: currentService.availableInPOS,
-            };
-            
-            const validatedFields = ServiceSchema.safeParse(finalServiceData);
+            const validatedFields = ServiceSchema.safeParse(currentService);
 
             if (!validatedFields.success) {
                 toast({ variant: 'destructive', title: 'Error de Validación', description: Object.values(validatedFields.error.flatten().fieldErrors).flat().join(', ') });
@@ -181,13 +148,15 @@ export default function ServicesPage() {
     });
   };
 
+  const handleDelete = () => {
+    if (!serviceToDelete) return;
 
-  const deleteService = (id: string) => {
     startTransition(async () => {
         try {
-            await deleteServiceMutation(id);
-            setServices(services.filter(s => s.id !== id));
+            await deleteServiceMutation(serviceToDelete.id);
+            setServices(services.filter(s => s.id !== serviceToDelete.id));
             toast({ title: 'Éxito', description: 'Servicio eliminado correctamente.' });
+            setServiceToDelete(null);
         } catch (error: any) {
              toast({ variant: 'destructive', title: 'Error', description: error.message || 'No se pudo eliminar el servicio.' });
         }
@@ -282,10 +251,6 @@ export default function ServicesPage() {
     e.target.value = '';
   };
   
-  const selectedCategoryData = useMemo(() => {
-    return categories.find(c => c.name === currentService.category);
-  }, [categories, currentService.category]);
-
   return (
     <AuthGuard allowedRoles={['Administrador']}>
       <Card>
@@ -327,67 +292,33 @@ export default function ServicesPage() {
                         <div className="grid gap-2">
                           <Label htmlFor="category">Categoría</Label>
                           <Select
-                              value={isCreatingCategory ? 'create_new' : currentService.category || ''}
-                              onValueChange={(value) => {
-                                  if (value === 'create_new') {
-                                      setIsCreatingCategory(true);
-                                      setCurrentService(prev => ({ ...prev, category: '', subcategory: '' }));
-                                  } else {
-                                      setIsCreatingCategory(false);
-                                      setCurrentService(prev => ({ ...prev, category: value, subcategory: '' }));
-                                  }
-                              }}
+                              value={currentService.category || ''}
+                              onValueChange={(value) => setCurrentService(prev => ({ ...prev, category: value, subcategory: '' }))}
                           >
                               <SelectTrigger>
                                   <SelectValue placeholder="Selecciona una categoría" />
                               </SelectTrigger>
                               <SelectContent>
                                   {categories.map(cat => <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>)}
-                                  <SelectItem value="create_new">+ Crear nueva categoría</SelectItem>
                               </SelectContent>
                           </Select>
-                          {isCreatingCategory && (
-                              <Input 
-                                  placeholder="Nombre de la nueva categoría"
-                                  value={newCategoryName}
-                                  onChange={(e) => setNewCategoryName(e.target.value)}
-                                  className="mt-2"
-                              />
-                          )}
                         </div>
                          <div className="grid gap-2">
                             <Label htmlFor="subcategory">Subcategoría (Opcional)</Label>
                             <Select
-                                value={isCreatingSubcategory ? 'create_new_sub' : currentService.subcategory || ''}
-                                onValueChange={(value) => {
-                                    if (value === 'create_new_sub') {
-                                        setIsCreatingSubcategory(true);
-                                        setCurrentService(prev => ({...prev, subcategory: ''}));
-                                    } else {
-                                        setIsCreatingSubcategory(false);
-                                        setCurrentService(prev => ({...prev, subcategory: value}));
-                                    }
-                                }}
-                                disabled={!selectedCategoryData || isCreatingCategory}
+                                value={currentService.subcategory || ''}
+                                onValueChange={(value) => setCurrentService(prev => ({...prev, subcategory: value}))}
+                                disabled={!currentService.category}
                             >
                                 <SelectTrigger>
-                                    <SelectValue placeholder={!selectedCategoryData ? "Selecciona categoría" : "Selecciona subcategoría"} />
+                                    <SelectValue placeholder={!currentService.category ? "Selecciona categoría" : "Selecciona subcategoría"} />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {selectedCategoryData?.subcategories?.map(sub => (
+                                    {categories.find(c => c.name === currentService.category)?.subcategories?.map(sub => (
                                         <SelectItem key={sub.id} value={sub.name}>{sub.name}</SelectItem>
                                     ))}
-                                    {selectedCategoryData && <SelectItem value="create_new_sub">+ Crear nueva subcategoría</SelectItem>}
                                 </SelectContent>
                             </Select>
-                            {isCreatingSubcategory && (
-                                <Input
-                                    placeholder="Nombre de la nueva subcategoría"
-                                    value={newSubcategoryName}
-                                    onChange={e => setNewSubcategoryName(e.target.value)}
-                                    className="mt-2"
-                                />
-                            )}
                         </div>
                     </div>
                     <div className="grid gap-2">
@@ -460,7 +391,7 @@ export default function ServicesPage() {
                             <span>Editar</span>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => deleteService(service.id)}>
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setServiceToDelete(service)}>
                             <Trash2 className="mr-2 h-4 w-4" />
                             <span>Eliminar</span>
                           </DropdownMenuItem>
@@ -480,6 +411,24 @@ export default function ServicesPage() {
           </Table>
         </CardContent>
       </Card>
+      
+      <AlertDialog open={!!serviceToDelete} onOpenChange={(open) => !open && setServiceToDelete(null)}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Esta acción no se puede deshacer. Se eliminará el servicio "{serviceToDelete?.name}".
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90" disabled={isPending}>
+                    {isPending ? 'Eliminando...' : 'Sí, eliminar'}
+                </AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </AuthGuard>
   );
 }

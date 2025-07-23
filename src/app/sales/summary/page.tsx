@@ -11,7 +11,8 @@ import { fetchSalesSummary } from '@/lib/data';
 import type { Sale, SalesSummaryData } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import { DollarSign, BarChart } from 'lucide-react';
+import { DollarSign, BarChart, Eye } from 'lucide-react';
+import Link from 'next/link';
 
 const StatCard = ({ title, value, icon, loading }: { title: string, value: string, icon: React.ReactNode, loading: boolean }) => (
     <Card>
@@ -145,6 +146,7 @@ export default function SalesSummaryPage() {
                                     <TableHead>Cliente</TableHead>
                                     <TableHead>Fecha</TableHead>
                                     <TableHead className="text-right">Total</TableHead>
+                                    <TableHead className="text-right">Acciones</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -155,11 +157,12 @@ export default function SalesSummaryPage() {
                                             <TableCell><Skeleton className="h-5 w-40" /></TableCell>
                                             <TableCell><Skeleton className="h-5 w-32" /></TableCell>
                                             <TableCell className="text-right"><Skeleton className="h-5 w-24 ml-auto" /></TableCell>
+                                            <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
                                         </TableRow>
                                     ))
                                 ) : !summaryData || summaryData.sales.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                                        <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                                             No hay ventas para mostrar en este rango de fechas.
                                         </TableCell>
                                     </TableRow>
@@ -170,6 +173,14 @@ export default function SalesSummaryPage() {
                                             <TableCell>{sale.customerName}</TableCell>
                                             <TableCell>{formatDate(sale.createdAt)}</TableCell>
                                             <TableCell className="text-right">{formatCurrency(sale.total)}</TableCell>
+                                            <TableCell className="text-right">
+                                                <Button asChild variant="outline" size="sm">
+                                                    <Link href={`/sales/receipts/${sale.id}`}>
+                                                        <Eye className="mr-2 h-4 w-4"/>
+                                                        Ver
+                                                    </Link>
+                                                </Button>
+                                            </TableCell>
                                         </TableRow>
                                     ))
                                 )}

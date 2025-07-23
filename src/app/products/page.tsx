@@ -14,12 +14,13 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Product, ProductCategory } from '@/lib/types';
 import { fetchProducts, fetchProductCategories } from '@/lib/data';
-import { deleteProduct } from '@/lib/mutations';
+import { createProduct, deleteProduct } from '@/lib/mutations';
 import * as XLSX from 'xlsx';
 import Image from 'next/image';
 import { ProductFormDialog } from '@/components/ProductFormDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { ProductSchema } from '@/lib/schemas';
 
 interface DialogState {
     isOpen: boolean;
@@ -160,21 +161,48 @@ export default function ProductsPage() {
         startTransition(async () => {
             let successCount = 0;
             for (const row of rows) {
-                // Here we would need to create a product using a mutation
-                // This part requires a mutation that accepts the row data
-                console.log("Processing row for import:", row);
-                successCount++;
+                const dataToValidate = {
+                    name: row['Nombre'],
+                    brand: row['Marca'],
+                    salePrice: Number(row['Precio Venta']),
+                    purchasePrice: Number(row['Precio Compra']),
+                    stock: Number(row['Stock']),
+                    barcode: row['Codigo Barra'],
+                    category: row['Categoria'],
+                    subcategory: row['Sub-Categoria'] || '',
+                    visibleInPOS: String(row['Visible en POS']).toLowerCase() === 'true',
+                };
+
+                const validatedFields = ProductSchema.safeParse(dataToValidate);
+
+                if (validatedFields.success) {
+                    await createProduct(validatedFields.data);
+                    successCount++;
+                } else {
+                    console.warn("Skipping invalid row:", row, validatedFields.error.flatten());
+                }
             }
             if (successCount > 0) {
-                 toast({ title: 'Carga Exitosa', description: `${successCount} nuevos productos han sido añadidos.` });
-                 await loadData();
+                 toast({
+                    title: 'Carga Exitosa',
+                    description: `${successCount} nuevos productos han sido añadidos.`,
+                });
+                await loadData();
             } else {
-                toast({ variant: 'destructive', title: 'Error de Carga', description: 'No se encontraron productos válidos en el archivo.' });
+                toast({
+                    variant: 'destructive',
+                    title: 'Error de Carga',
+                    description: 'No se encontraron productos válidos en el archivo o el formato es incorrecto.',
+                });
             }
         });
       } catch (error) {
         console.error("Error processing file:", error);
-        toast({ variant: 'destructive', title: 'Error de Carga', description: 'Hubo un problema al procesar el archivo.' });
+        toast({
+            variant: 'destructive',
+            title: 'Error de Carga',
+            description: 'Hubo un problema al procesar el archivo.',
+        });
       }
     };
     reader.readAsBinaryString(file);

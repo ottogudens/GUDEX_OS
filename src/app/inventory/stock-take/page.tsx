@@ -7,44 +7,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-// import { AuthGuard } from '@/components/AuthGuard'; // Assuming AuthGuard is handled by layout or higher level
+import { AuthGuard } from '@/components/AuthGuard';
 import { Barcode, Search, Package, PlusCircle, Camera } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { Product } from '@/lib/types';
-import { fetchProductByBarcode } from '@/lib/data';
-import { fetchStockLogs } from '@/lib/data';
+import type { Product, StockLog } from '@/lib/types';
+import { fetchProductByBarcode, fetchStockLogs } from '@/lib/data';
 import { updateProductStock } from '@/lib/mutations';
 import { ProductFormDialog } from '@/components/ProductFormDialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { BrowserMultiFormatReader, BarcodeFormat } from '@zxing/library';
 import { useAuth } from '@/context/AuthContext';
-import type { StockLog } from '@/lib/types';
-
+import { StockUpdateSchema } from '@/lib/schemas';
+import jsQR from 'jsqr';
 
 export default function StockTakePage() {
-
-    // Utility function for debouncing
-    const debounce = <T extends any[]>(func: (...args: T) => void, delay: number) => {
-        let timeoutId: NodeJS.Timeout | null;
-        return (...args: T) => {
-            if (timeoutId) {
-                clearTimeout(timeoutId);
-            }
-            timeoutId = setTimeout(() => {
-                func(...args);
-            }, delay);
-        };
-    };
-    
-
     const { toast } = useToast();
     const { user } = useAuth();
     const [isSearching, startSearchTransition] = useTransition();
@@ -60,7 +38,6 @@ export default function StockTakePage() {
     const [isProductFormOpen, setIsProductFormOpen] = useState(false);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
 
-    // Refs for camera scanning
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -73,7 +50,6 @@ export default function StockTakePage() {
         setProductNotFound(false);
     };
 
-    // Original handleSearch function
     const handleSearch = useCallback((searchBarcode: string) => {
         if (!searchBarcode.trim()) {
             toast({ variant: 'destructive', title: 'Código de barras vacío', description: 'Por favor, ingresa un código para buscar.' });
@@ -87,7 +63,6 @@ export default function StockTakePage() {
             setProductNotFound(false);
             setSelectedProduct(null);
             try {
-                // Assuming fetchProductByBarcode is designed to handle potential errors gracefully
                 const product = await fetchProductByBarcode(searchBarcode);
                 if (product) {
                     setSelectedProduct(product);
@@ -99,26 +74,31 @@ export default function StockTakePage() {
                 toast({ variant: 'destructive', title: 'Error de Búsqueda', description: 'No se pudo realizar la búsqueda.' });
             }
         });
-    }, [toast, startSearchTransition]);
-
-    // Debounced version of handleSearch
-    const debouncedSearch = useCallback(
-        debounce((searchBarcode: string) => {
-            handleSearch(searchBarcode);
-        }, 400), // Adjust debounce delay as needed (e.g., 400ms)
-        [handleSearch]
-    );
+    }, [toast]);
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            // Use the immediate handleSearch on Enter press
             handleSearch(barcode);
         }
+    };
+
+    const loadStockLogs = async () => {
+        try {
+            setLoadingStockLogs(true);
+            const logs = await fetchStockLogs();
+            setStockLogs(logs);
+        } catch (error) {
+            console.error('Error loading stock logs:', error);
+            toast({ variant: 'destructive', title: 'Error de Carga', description: 'No se pudieron cargar los registros de ajustes de stock.' });
+        } finally {
+            setLoadingStockLogs(false);
+        }
+    };
+
     const handleStockUpdate = () => {
         if (!selectedProduct || !user) return;
         
-        // Validate if newStock is a valid number string first
         if (newStock === '' || isNaN(Number(newStock))) {
             toast({ variant: 'destructive', title: 'Cantidad inválida', description: 'Por favor, ingresa una cantidad numérica válida.' });
             return;
@@ -133,24 +113,20 @@ export default function StockTakePage() {
 
         startUpdateTransition(async () => {
             try {
-                await updateProductStock(selectedProduct, countedStock, { id: user.id, name: user.name });
+                await updateProductStock(selectedProduct, countedStock, { id: user.uid, name: user.name });
                 
-                loadStockLogs(); // Reload logs after successful update
+                loadStockLogs();
 
                 toast({
                     title: '¡Stock Actualizado!',
                     description: `El stock de "${selectedProduct.name}" es ahora ${countedStock}.`,
                 });
                 resetState();
-                // Re-focus the barcode input after successful update
                 document.getElementById('barcode-input')?.focus();
             } catch (error: any) {
-                // If update fails, just show toast, don't reset state
-                // to allow user to potentially retry or correct
                 toast({ variant: 'destructive', title: 'Error al actualizar', description: error.message });
             }
         });
-
     };
     
     const handleProductCreated = () => {
@@ -188,15 +164,15 @@ export default function StockTakePage() {
                 });
 
                 if (code && code.data) {
-                    debouncedSearch(code.data); // Use debounced search for scanner
-                    setIsScannerOpen(false); // This will trigger the useEffect cleanup
+                    handleSearch(code.data);
+                    setIsScannerOpen(false);
                     return;
                 }
             }
             animationFrameIdRef.current = requestAnimationFrame(tick);
         };
         animationFrameIdRef.current = requestAnimationFrame(tick);
-    }, [debouncedSearch]); // Use debouncedSearch here
+    }, [handleSearch]);
 
     useEffect(() => {
         if (isScannerOpen) {
@@ -223,29 +199,11 @@ export default function StockTakePage() {
         return () => {
             stopScan();
         };
-    }, [isScannerOpen, startScan, stopScan, toast, debouncedSearch]); // Added debouncedSearch
+    }, [isScannerOpen, startScan, stopScan, toast]);
 
-    // Effect to clean up debounce timeout on unmount
     useEffect(() => {
-        return () => debouncedSearch.cancel?.(); // Assuming debounce utility might have a cancel method
-    }, [debouncedSearch]);
-
-    // Effect to load stock logs on component mount
-    useEffect(() => {
-        const loadStockLogs = async () => {
-            try {
-                setLoadingStockLogs(true);
-                const logs = await fetchStockLogs();
-                setStockLogs(logs);
-            } catch (error) {
-                console.error('Error loading stock logs:', error);
-                toast({ variant: 'destructive', title: 'Error de Carga', description: 'No se pudieron cargar los registros de ajustes de stock.' });
-            } finally {
-                setLoadingStockLogs(false);
-            }
-        };
         loadStockLogs();
-    }, [toast]); // Depend on toast if used within loadStockLogs
+    }, []);
 
     const renderResult = () => {
         if (isSearching) {
@@ -336,7 +294,7 @@ export default function StockTakePage() {
                                     placeholder="Escanea o tipea el código..."
                                     value={barcode}
                                     onChange={(e) => setBarcode(e.target.value)}
-                                    onKeyDown={handleKeyDown} // Keep Enter key immediate
+                                    onKeyDown={handleKeyDown}
                                     className="pl-10"
                                     disabled={isSearching}
                                 />
@@ -372,12 +330,18 @@ export default function StockTakePage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {adjustedItems.length > 0 ? (
-                                adjustedItems.map((item, index) => (
-                                    <TableRow key={index}>
-                                        <TableCell className="font-medium">{item.name}</TableCell>
-                                        <TableCell className="text-center">{item.oldStock}</TableCell>
-                                        <TableCell className="text-center font-bold text-green-500">{item.newStock}</TableCell>
+                            {loadingStockLogs ? (
+                                <TableRow>
+                                    <TableCell colSpan={3} className="text-center h-24">
+                                        <Skeleton className="h-5 w-full" />
+                                    </TableCell>
+                                </TableRow>
+                            ) : stockLogs.length > 0 ? (
+                                stockLogs.map((log) => (
+                                    <TableRow key={log.id}>
+                                        <TableCell className="font-medium">{log.productName}</TableCell>
+                                        <TableCell className="text-center">{log.oldStock}</TableCell>
+                                        <TableCell className="text-center font-bold text-green-500">{log.newStock}</TableCell>
                                     </TableRow>
                                 ))
                             ) : (

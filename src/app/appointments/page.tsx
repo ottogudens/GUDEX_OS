@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { PlusCircle, Clock } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { es } from 'date-fns/locale';
 import { AuthGuard } from '@/components/AuthGuard';
 import { fetchAppointmentsByDate, fetchAppointmentRequests } from '@/lib/data';
@@ -20,24 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { Appointment, AppointmentRequest } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogClose,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { AddAppointmentButton } from '@/components/AddAppointmentButton';
 
 export default function AppointmentsPage() {
   const { toast } = useToast();
@@ -66,7 +49,7 @@ export default function AppointmentsPage() {
     loadData();
   }, [date]);
 
-  const handleConfirmRequest = async (request: any) => {
+  const handleConfirmRequest = async (request: AppointmentRequest) => {
     try {
         const vehicleIdString = request.vehicleIdentifier || request.vehicleDescription || 'Vehículo no especificado';
         
@@ -82,7 +65,7 @@ export default function AppointmentsPage() {
             vehicleIdentifier: vehicleIdString,
             service: serviceDescription,
             status: 'Confirmada',
-            appointmentDate: request.requestedDate,
+            appointmentDate: new Date(request.requestedDate),
         }, request.id);
 
         toast({ title: 'Cita Confirmada', description: `La cita para ${request.customerName} ha sido agendada.` });
@@ -99,9 +82,12 @@ export default function AppointmentsPage() {
       <div className="grid lg:grid-cols-3 gap-8 items-start">
         <div className="lg:col-span-2">
             <Card>
-                 <CardHeader>
-                    <CardTitle>Calendario de Citas</CardTitle>
-                    <CardDescription>Selecciona un día para ver y gestionar las citas.</CardDescription>
+                 <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                        <CardTitle>Calendario de Citas</CardTitle>
+                        <CardDescription>Selecciona un día para ver y gestionar las citas.</CardDescription>
+                    </div>
+                    <AddAppointmentButton onSuccess={loadData} />
                 </CardHeader>
                 <CardContent className="flex justify-center">
                     <Calendar
@@ -129,7 +115,7 @@ export default function AppointmentsPage() {
                             </div>
                             <div className="border-l pl-4">
                                 <p className="font-semibold">{apt.customerName}</p>
-                                <p className="text-sm text-muted-foreground">{apt.vehicleIdentifier}</p>
+                                <p className="text-sm text-muted-foreground">{apt.vehicleDescription}</p>
                                 <p className="text-sm mt-1">{apt.service}</p>
                             </div>
                         </div>

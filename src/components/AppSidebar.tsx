@@ -98,25 +98,11 @@ const allNavItems: NavItem[] = [
     ]
   },
   { 
-    label: 'Compras', 
+    href: '/purchases/providers', 
     icon: FileText, 
+    label: 'Compras', 
     tooltip: 'Gestión de Compras', 
     roles: ['Administrador'],
-    children: [
-        { 
-          label: 'Órdenes de Compra', 
-          icon: FileText, 
-          tooltip: 'Órdenes de Compra', 
-          roles: ['Administrador'],
-          children: [
-            { href: '/purchases/orders/new', label: 'Nueva Orden', tooltip: 'Nueva Orden de Compra' },
-            { href: '/purchases/orders', label: 'Ver Órdenes', tooltip: 'Ver Órdenes de Compra' },
-          ]
-        },
-        { href: '/purchases/invoices', label: 'Ingreso de Facturas', tooltip: 'Ingreso de Facturas' },
-        { href: '/purchases/providers', label: 'Proveedores', tooltip: 'Gestión de Proveedores' },
-        { href: '/purchases/provider-payments', label: 'Pagos a Proveedores', tooltip: 'Pagos a Proveedores' },
-    ]
   },
   { href: '/agenda', icon: Calendar, label: 'Agenda', tooltip: 'Integración de Agenda', roles: ['Administrador'] },
   { href: '/emails', icon: Mail, label: 'Correos', tooltip: 'Gestión de Correos', roles: ['Administrador'] },

@@ -83,3 +83,25 @@ export const ProviderSchema = z.object({
 });
 
 export type ProviderFormData = z.infer<typeof ProviderSchema>;
+
+export const AppointmentRequestSchema = z.object({
+  customerId: z.string(),
+  customerName: z.string(),
+  customerEmail: z.string().email(),
+  vehicleId: z.string(),
+  vehicleIdentifier: z.string(),
+  service: z.string(),
+  notes: z.string().optional(),
+  requestedDate: z.string(),
+});
+
+export const PurchaseInvoiceSchema = z.object({
+  providerId: z.string().min(1, "El proveedor es obligatorio."),
+  invoiceNumber: z.string().min(1, "El número de factura es obligatorio."),
+  date: z.date(),
+  items: z.array(z.object({
+    productId: z.string().min(1, "El producto es obligatorio."),
+    quantity: z.number().min(1, "La cantidad debe ser al menos 1."),
+    purchasePrice: z.number().min(0, "El precio de compra no puede ser negativo."),
+  })).min(1, "Debe haber al menos un ítem en la factura."),
+});

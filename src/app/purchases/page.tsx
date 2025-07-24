@@ -74,20 +74,6 @@ export default function PurchasesDashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Panel de Compras</h1>
-        <div className="flex gap-2">
-            <Button asChild>
-                <Link href="/purchases/invoices/new">
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Registrar Factura
-                </Link>
-            </Button>
-            <Button variant="outline" asChild>
-                <Link href="/purchases/providers/new">
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Nuevo Proveedor
-                </Link>
-            </Button>
-        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

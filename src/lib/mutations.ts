@@ -407,3 +407,38 @@ export async function deleteProvider(providerId: string) {
         return { success: false, message: error.message };
     }
 }
+
+export async function createBudgetRequest(data: any) {
+    try {
+        const newRequestRef = doc(collection(db, 'budgetRequests'));
+        await setDoc(newRequestRef, {
+            ...data,
+            status: 'Pendiente',
+            createdAt: serverTimestamp() as Timestamp,
+        });
+        revalidatePath('/portal/budgets');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function createAppointmentRequest(data: any) {
+    try {
+        const newRequestRef = doc(collection(db, 'appointmentRequests'));
+        await setDoc(newRequestRef, {
+            ...data,
+            status: 'Pendiente',
+            createdAt: serverTimestamp() as Timestamp,
+        });
+        revalidatePath('/portal/schedule');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function createPurchaseInvoice(data: any) {
+    console.log("Creating purchase invoice with data:", data);
+    return { success: true };
+}

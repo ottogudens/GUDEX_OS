@@ -9,7 +9,7 @@ import { Send, Sparkles, Bot, User, Loader2 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/context/AuthContext';
-import { fetchVehiclesByCustomerId } from '@/lib/data';
+import { fetchVehiclesByCustomer } from '@/lib/data';
 import { askVehicleAssistant } from '@/ai/flows/vehicle-assistant-flow';
 import type { Vehicle } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -32,7 +32,7 @@ export default function AIAssistantPage() {
 
     useEffect(() => {
         if (user?.id) {
-            fetchVehiclesByCustomerId(user.id)
+            fetchVehiclesByCustomer(user.id)
                 .then(setVehicles)
                 .finally(() => setLoadingVehicles(false));
         }

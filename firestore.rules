@@ -73,7 +73,8 @@ service cloud.firestore {
 
     // DVI: Allow signed in users to manage templates and inspections to fix creation issue.
     match /dvi-templates/{templateId} {
-      allow read, write: if isSignedIn(); // TEMPORARY FIX
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
     match /dvi/{dviId} {
       allow read, write: if isSignedIn(); // TEMPORARY FIX

@@ -24,7 +24,7 @@ import { Car, Mail, Phone, Wrench } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { AuthGuard } from '@/components/AuthGuard';
-import { fetchCustomerById, fetchVehiclesByCustomerId, fetchServiceHistoryByVehicleIds } from '@/lib/data';
+import { fetchCustomerById, fetchVehiclesByCustomer, fetchServiceHistoryByVehicleIds } from '@/lib/data';
 import { Customer, Vehicle, ServiceHistory } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -53,7 +53,7 @@ export default function CustomerDetailPage() {
         }
         setCustomer(customerData);
 
-        const vehiclesData = await fetchVehiclesByCustomerId(customerId);
+        const vehiclesData = await fetchVehiclesByCustomer(customerId);
         setCustomerVehicles(vehiclesData);
 
         if (vehiclesData.length > 0) {

@@ -1,9 +1,9 @@
 
 'use server';
 
-import { collection, getDocs, query, addDoc } from 'firebase/firestore';
+import { collection, getDocs, query, addDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { Vehicle, DVITemplate, User, DVI, DVIPointStatus } from '@/lib/types';
+import type { Vehicle, DVITemplate, User, DVI, DVIPointStatus, Customer } from '@/lib/types';
 import { serverTimestamp } from 'firebase/firestore';
 
 /**
@@ -38,6 +38,18 @@ export async function createDVIAction(params: { vehicle: Vehicle; template: DVIT
     }
 
     try {
+        // Fetch customer data to get the name
+        let customerName = 'Cliente Desconocido';
+        try {
+            const customerDocRef = doc(db, 'customers', vehicle.customerId);
+            const customerDoc = await getDoc(customerDocRef);
+            if (customerDoc.exists()) {
+                customerName = (customerDoc.data() as Customer).name;
+            }
+        } catch (e) {
+            console.error("Could not fetch customer name for DVI:", e);
+        }
+
         // Construct the DVI object from the template
         const newDVI: Omit<DVI, 'id'> = {
             templateName: template.name,
@@ -53,10 +65,8 @@ export async function createDVIAction(params: { vehicle: Vehicle; template: DVIT
                 plate: vehicle.licensePlate,
             },
             customer: {
-                // This assumes the customer ID is on the vehicle object. 
-                // We'd need to fetch customer name separately if needed, but for now this is fine.
                 id: vehicle.customerId, 
-                name: '', // We can populate this later if necessary
+                name: customerName,
             },
             sections: template.sections.map(section => ({
                 ...section,
@@ -79,6 +89,7 @@ export async function createDVIAction(params: { vehicle: Vehicle; template: DVIT
         return { success: false, message: 'Failed to create DVI.' };
     }
 }
+
 
 /**
  * Fetches all DVI templates from Firestore.

@@ -28,7 +28,7 @@ export default function DVITemplatesPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: createDVITemplateAction,
+    mutationFn: (name: string) => createDVITemplateAction(name),
     onSuccess: (result) => {
         if (result.success) {
             queryClient.invalidateQueries({ queryKey: ['dvi-templates'] });

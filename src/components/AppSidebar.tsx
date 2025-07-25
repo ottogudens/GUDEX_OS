@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Users, Settings, FileText, ShoppingCart, ConciergeBell, Megaphone, Package, Cpu, ReceiptText, ChevronDown, Wrench, ClipboardList, Mail, Calendar } from 'lucide-react';
+import { LayoutDashboard, Users, Settings, FileText, ShoppingCart, ConciergeBell, Megaphone, Package, Cpu, ReceiptText, ChevronDown, Wrench, ClipboardList, Mail, Calendar, MessageCircle } from 'lucide-react';
 import {
   Sidebar,
   SidebarHeader,
@@ -105,6 +105,16 @@ const allNavItems: NavItem[] = [
     roles: ['Administrador'],
   },
   { href: '/agenda', icon: Calendar, label: 'Agenda', tooltip: 'Integración de Agenda', roles: ['Administrador'] },
+  { 
+    label: 'WhatsApp Bot', 
+    icon: MessageCircle, 
+    tooltip: 'Gestionar WhatsApp Bot', 
+    roles: ['Administrador'],
+    children: [
+        { href: '/settings/whatsapp', label: 'Gestionar Flujos', tooltip: 'Crear y editar flujos' },
+        { href: '/settings/whatsapp/status', label: 'Estado del Servicio', tooltip: 'Estado y acciones del bot' },
+    ]
+  },
   { href: '/emails', icon: Mail, label: 'Correos', tooltip: 'Gestión de Correos', roles: ['Administrador'] },
   { href: '/marketing', icon: Megaphone, label: 'Publicidad', tooltip: 'Publicidad y Promociones', roles: ['Administrador'] },
 ];
@@ -119,7 +129,7 @@ export function AppSidebar() {
     const activeParent = allNavItems.find(item => 
       item.children?.some(child => 
         pathname.startsWith(child.href!) || 
-        (child.children && child.children.some(subChild => pathname.startsWith(subChild.href!)))
+        ('children' in child && child.children && child.children.some((subChild: any) => pathname.startsWith(subChild.href!)))
       )
     );
     if (activeParent && !openSubmenus.includes(activeParent.label)) {
@@ -150,7 +160,7 @@ export function AppSidebar() {
       const isActive = hasChildren
         ? item.children!.some(child => 
             pathname.startsWith(child.href!) || 
-            (child.children && child.children.some(subChild => pathname.startsWith(subChild.href!)))
+            ('children' in child && child.children && child.children.some((subChild: any) => pathname.startsWith(subChild.href!)))
           )
         : (item.href ? (item.href === '/' ? pathname === item.href : pathname.startsWith(item.href)) : false);
 
@@ -173,11 +183,11 @@ export function AppSidebar() {
             {isSubmenuOpen && (
               <SidebarMenuSub>
                 {item.children!.map(child => {
-                  if (child.children) {
+                  if ('children' in child && child.children) {
                     return (
                       <div key={child.label}>
                         <SidebarMenuButton
-                            isActive={child.children.some(subChild => pathname.startsWith(subChild.href!))}
+                            isActive={child.children.some((subChild: any) => pathname.startsWith(subChild.href!))}
                             tooltip={child.tooltip}
                             onClick={() => toggleSubmenu(child.label)}
                             className="justify-between"
@@ -190,7 +200,7 @@ export function AppSidebar() {
                         </SidebarMenuButton>
                         {openSubmenus.includes(child.label) && (
                           <SidebarMenuSub>
-                            {child.children.map(subChild => {
+                            {child.children.map((subChild: any) => {
                               const isChildActive = subChild.href === '/' ? pathname === subChild.href : pathname.startsWith(subChild.href);
                               return (
                                 <SidebarMenuSubItem key={subChild.href}>
@@ -208,7 +218,7 @@ export function AppSidebar() {
                     );
                   }
                   
-                  const isChildActive = child.href === '/' ? pathname === child.href : pathname.startsWith(child.href);
+                  const isChildActive = child.href === '/' ? pathname === child.href : pathname.startsWith(child.href!);
                   return (
                     <SidebarMenuSubItem key={child.href}>
                       <SidebarMenuSubButton asChild isActive={isChildActive}>

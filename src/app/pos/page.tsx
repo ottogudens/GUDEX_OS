@@ -109,7 +109,7 @@ export default function POSPage() {
                  }
             }
         }
-        return items;
+        return items.slice(0, 20);
     }, [sellableItems, selectedCategory, selectedSubcategory, currentCategories, saleContext, selectedWorkOrderId, itemTypeFilter]);
 
     const currentSubcategories = useMemo(() => {

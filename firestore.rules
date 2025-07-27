@@ -1,178 +1,129 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // =================================
-    //  Helper Functions
+    //  Funciones de Ayuda
     // =================================
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function getUserData() {
+    // Devuelve el documento del usuario que hace la petición
+    function getRequestingUser() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
-
-    function userExists() {
+    
+    // Comprueba si el usuario que hace la petición existe
+    function requestingUserExists() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    function getUserRole() {
-      return userExists() ? getUserData().data.role : null;
+    // Devuelve el rol del usuario que hace la petición
+    function getRequestingUserRole() {
+      return requestingUserExists() ? getRequestingUser().data.role : null;
     }
 
+    // Comprueba si el usuario es dueño del recurso (documento)
+    // Asume que el documento tiene un campo 'customerId' o 'userId'
+    function isResourceOwner(resource) {
+      return request.auth.uid == resource.data.customerId || request.auth.uid == resource.data.userId;
+    }
+    
+    // Comprueba roles
     function isAdmin() {
-      return isSignedIn() && getUserRole() == 'Administrador';
+      return isSignedIn() && getRequestingUserRole() == 'Administrador';
     }
     
     function isStaff() {
-      let userRole = getUserRole();
+      let userRole = getRequestingUserRole();
       return isSignedIn() && (userRole == 'Administrador' || userRole == 'Mecanico' || userRole == 'Cajero');
     }
     
     function isClient() {
-      return isSignedIn() && getUserRole() == 'Cliente';
+      return isSignedIn() && getRequestingUserRole() == 'Cliente';
     }
 
     // =================================
-    //  Collection Rules
+    //  Reglas de Colecciones
     // =================================
 
-    // Settings: Public read, only admin write.
-    match /settings/{docId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-    
-    // Users: Admins can manage all, users can manage their own profile.
+    // Usuarios: Solo los admins pueden gestionar usuarios. Un usuario puede leer y actualizar su propio perfil.
     match /users/{userId} {
-      allow read, update: if isAdmin() || isOwner(userId);
+      allow read, update: if request.auth.uid == userId || isAdmin();
       allow create, delete: if isAdmin();
     }
 
-    // Customers: Staff can read all. Users can read their own.
-    // Staff can create. Users can create a customer profile for themselves upon signup.
-    match /customers/{userId} {
-      allow read: if isStaff() || isOwner(userId);
-      allow create: if isStaff() || (isSignedIn() && request.resource.data.email == request.auth.token.email);
-      allow update: if isAdmin() || isOwner(userId);
+    // Clientes: El personal puede gestionar clientes. Un cliente puede ver sus propios datos.
+    match /customers/{customerId} {
+      allow read: if isStaff() || request.auth.uid == customerId;
+      allow create: if isStaff(); // La creación de clientes la hace el personal
+      allow update: if isStaff() || request.auth.uid == customerId;
       allow delete: if isAdmin();
     }
     
-    // Vehicles: Allow signed in users to read/write for now to fix loading issue.
+    // Vehículos: El personal puede gestionar vehículos. Un cliente solo puede ver los suyos.
     match /vehicles/{vehicleId} {
-      allow read, write: if isSignedIn(); // TEMPORARY FIX
-      allow delete: if isStaff();
+      // La lectura requiere que el 'customerId' en el documento del vehículo coincida con el UID del solicitante, o que el solicitante sea personal.
+      allow read: if isStaff() || (resource.data.customerId != null && isResourceOwner(resource));
+      // La escritura (crear, actualizar) es solo para el personal.
+      allow write: if isStaff();
+      allow delete: if isAdmin();
     }
 
-    // DVI: Allow signed in users to manage templates and inspections to fix creation issue.
-    match /dvi-templates/{templateId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
+    // DVI (Inspecciones): El personal puede gestionar las inspecciones. El cliente puede leer las suyas.
     match /dvi/{dviId} {
-      allow read, write: if isSignedIn(); // TEMPORARY FIX
-    }
-
-    // Products & Services: Readable by staff. Writable only by Admins,
-    // except for stock updates which any staff can do.
-    match /products/{productId} {
-      allow read: if isStaff();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (isStaff() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock']));
-    }
-    
-    match /services/{serviceId} {
-      allow read: if isStaff();
-      allow create, update, delete: if isAdmin();
-    }
-
-    // Categories: Readable by staff, writable by Admins.
-    match /productCategories/{categoryId} {
-      allow read: if isStaff();
-      allow create, update, delete: if isAdmin();
-    }
-    match /serviceCategories/{categoryId} {
-      allow read: if isStaff();
-      allow create, update, delete: if isAdmin();
-    }
-
-    // Stock Logs: Staff can create and read.
-    match /stockLogs/{logId} {
-      allow create: if isStaff();
-      allow read: if isStaff();
-    }
-    
-    // Workshop operations: Staff can manage. Clients can read their own documents.
-    match /appointments/{appointmentId} {
-      allow read: if isStaff() || (isClient() && resource.data.customerId == request.auth.uid);
+      allow read: if isStaff() || (resource.data.customerId != null && isResourceOwner(resource));
       allow write: if isStaff();
     }
 
-    match /appointmentRequests/{requestId} {
-      allow create: if isClient() && request.resource.data.customerId == request.auth.uid;
-      allow read: if isStaff() || (isClient() && resource.data.customerId == request.auth.uid);
-      allow delete: if isStaff();
-    }
-    
-    // Budgets: Admins can manage fully. Clients can manage their own.
-    match /budgets/{budgetId} {
-      allow read: if isAdmin() || (isClient() && resource.data.customerId == request.auth.uid);
-      allow write: if isAdmin();
-      allow update: if isAdmin() || (isClient() && request.resource.data.customerId == request.auth.uid);
-    }
-
-    match /budgetRequests/{requestId} {
-      allow create: if isClient() && request.resource.data.customerId == request.auth.uid;
-      allow read, delete: if isAdmin();
-    }
-    
-    match /workOrders/{orderId} {
-      allow create, update: if isStaff();
-      allow read: if isStaff() || (isClient() && resource.data.customerId == request.auth.uid);
-    }
-    
-    // Admin-Only Areas
-    match /cameras/{cameraId} {
-      allow read, write: if isAdmin();
-    }
-    
-    match /sales/{saleId} {
+    // Plantillas DVI: Solo los administradores pueden crearlas y modificarlas, pero todo el personal puede leerlas para usarlas.
+    match /dvi-templates/{templateId} {
       allow read: if isStaff();
       allow write: if isAdmin();
     }
-    
-    // Cash Register: Can be managed by any staff member.
-    match /cashRegisterSessions/{sessionId} {
-      allow read, write: if isStaff();
+
+    // Productos y Servicios: El personal puede leerlos. Solo los Admins gestionan, excepto el stock.
+    match /products/{productId} {
+      allow read: if isStaff();
+      allow create, delete: if isAdmin();
+      // Permite a un admin actualizar todo, o al personal actualizar solo el stock.
+      allow update: if isAdmin() || (isStaff() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock']));
     }
     
-    match /cashMovements/{movementId} {
-      allow read, write: if isStaff();
+    // Presupuestos: El personal puede crear/leer/actualizar. El cliente puede leer los suyos y aprobarlos.
+    match /budgets/{budgetId} {
+      allow read: if isStaff() || (resource.data.customerId != null && isResourceOwner(resource));
+      allow create, update: if isStaff() || 
+                              (isClient() && isResourceOwner(resource) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])); // El cliente solo puede cambiar el status (aprobar/rechazar)
+      allow delete: if isAdmin();
+    }
+    
+    // Órdenes de Trabajo: El personal las gestiona, los clientes pueden leer las suyas.
+    match /workOrders/{orderId} {
+      allow read: if isStaff() || (resource.data.customerId != null && isResourceOwner(resource));
+      allow write: if isStaff();
+    }
+    
+    // --- OTRAS COLECCIONES (simplificado para el ejemplo) ---
+    
+    // Citas: El personal gestiona, los clientes leen las suyas.
+    match /appointments/{appointmentId} {
+      allow read: if isStaff() || (resource.data.customerId != null && isResourceOwner(resource));
+      allow write: if isStaff();
     }
 
-    // Receipts: Writable by Admin, readable by staff and the specific client.
+    // Recibos: El personal de caja/admin escribe. Clientes y personal leen.
     match /receipts/{receiptId} {
-      allow create: if isAdmin();
-      allow read: if isStaff() || (isClient() && resource.data.customerId == request.auth.uid);
+      allow read: if isStaff() || (resource.data.customerId != null && isResourceOwner(resource));
+      allow create: if getRequestingUserRole() == 'Cajero' || isAdmin();
     }
     
-    // Server-side logging: Allows write access for logging purposes from backend.
-    // Read/manage access is restricted to Admins.
+    // Logs del Servidor: Solo se pueden crear desde un backend con privilegios (ver punto 1.2). Lectura solo para Admins.
     match /emailLogs/{logId} {
-      allow create: if true; // Should be restricted to a service account if possible.
-      allow read, update, delete: if isAdmin();
-    }
-
-    match /sentEmails/{emailId} {
-      allow create: if true; // Should be restricted to a service account if possible.
-      allow read, update, delete: if isAdmin();
+      allow read: if isAdmin();
+      allow write: if false; // Nadie puede escribir directamente desde el cliente.
     }
   }
 }

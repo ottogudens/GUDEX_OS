@@ -326,6 +326,51 @@ export interface ProviderPayment {
     createdAt: Timestamp;
 }
 
+export interface PurchaseInvoice {
+    id: string;
+    providerId: string;
+    invoiceNumber: string;
+    date: string;
+    totalAmount: number;
+    status: 'Pendiente' | 'Pagada';
+}
+
+export interface Budget {
+    id: string;
+    customerId: string;
+    customerName: string;
+    vehicleId: string;
+    vehicleDescription: string;
+    total: number;
+    status: 'Pendiente' | 'Aprobado' | 'Rechazado';
+    createdAt: Timestamp;
+}
+
+export interface BudgetRequest {
+    id: string;
+    customerId: string;
+    customerName: string;
+    customerEmail: string;
+    vehicleId: string;
+    vehicleIdentifier: string;
+    description: string;
+    status: 'Pendiente' | 'Revisado';
+    createdAt: Timestamp;
+}
+
+export interface AppointmentRequest {
+    id: string;
+    customerId: string;
+    customerName: string;
+    customerEmail: string;
+    vehicleId: string;
+    vehicleIdentifier: string;
+    service: string;
+    notes?: string;
+    requestedDate: string;
+    status: 'Pendiente' | 'Confirmada' | 'Cancelada';
+}
+
 // =================================
 //  Digital Vehicle Inspection (DVI)
 // =================================

@@ -1,6 +1,77 @@
 
 import * as z from 'zod';
 
+export const CreateDVISchema = z.object({
+  vehicleId: z.string().min(1, 'Se requiere el ID del vehículo.'),
+  templateId: z.string().min(1, 'Se requiere el ID de la plantilla.'),
+});
+
+export const DVIPhotoUploadSchema = z.object({
+  dviId: z.string().min(1),
+  pointId: z.string().min(1),
+  file: z.instanceof(File).refine(file => file.size > 0, 'El archivo es obligatorio.').refine(file => file.size < 4 * 1024 * 1024, 'El archivo no puede pesar más de 4MB.'),
+});
+
+const DVIPointSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(['ok', 'attention', 'critical']),
+  notes: z.string().optional(),
+  images: z.array(z.string().url()).optional(),
+});
+
+const DVISectionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  points: z.array(DVIPointSchema),
+});
+
+export const DVIUpdateSchema = z.object({
+  id: z.string().min(1),
+  sections: z.array(DVISectionSchema),
+});
+
+
+export const DVITemplateSchema = z.object({
+  name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
+});
+
+// NUEVO ESQUEMA PARA LA ACTUALIZACIÓN DE PLANTILLAS
+const DVIPointTemplateSchema = z.object({
+    id: z.string(),
+    name: z.string().min(1, 'El nombre del punto no puede estar vacío.'),
+});
+
+const DVISectionTemplateSchema = z.object({
+    id: z.string(),
+    name: z.string().min(1, 'El nombre de la sección no puede estar vacío.'),
+    points: z.array(DVIPointTemplateSchema),
+});
+
+export const DVITemplateUpdateSchema = z.object({
+    id: z.string().min(1),
+    name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
+    sections: z.array(DVISectionTemplateSchema),
+});
+// FIN DEL NUEVO ESQUEMA
+
+export const WhatsAppFlowSchema = z.object({
+  name: z.string().min(3, 'El nombre debe tener al menos 3 caracteres.'),
+  keywords: z.array(z.string()).min(1, 'Se requiere al menos una palabra clave.'),
+  responses: z.array(z.object({
+    type: z.literal('text'),
+    content: z.string().min(1, 'El contenido de la respuesta no puede estar vacío.'),
+    media: z.string().url().nullable().optional(),
+  })).min(1, 'Se requiere al menos una respuesta.'),
+  isEnabled: z.boolean(),
+});
+
+export const ProductCategorySchema = z.object({
+  name: z.string().min(2, { message: "El nombre debe tener al menos 2 caracteres." }),
+  visibleInPOS: z.boolean().default(true),
+  parentId: z.string().nullable().optional(),
+});
+
 export const VehicleSchema = z.object({
   customerId: z.string().min(1, 'Se requiere un cliente.'),
   licensePlate: z.string().min(1, 'La patente es obligatoria.'),
@@ -104,4 +175,41 @@ export const PurchaseInvoiceSchema = z.object({
     quantity: z.number().min(1, "La cantidad debe ser al menos 1."),
     purchasePrice: z.number().min(0, "El precio de compra no puede ser negativo."),
   })).min(1, "Debe haber al menos un ítem en la factura."),
+});
+
+export const WorkshopSettingsSchema = z.object({
+    name: z.string().min(1, "El nombre del taller es obligatorio."),
+    rut: z.string().min(1, "El RUT es obligatorio."),
+    address: z.string().min(1, "La dirección es obligatoria."),
+    phone: z.string().min(1, "El teléfono es obligatorio."),
+    whatsapp: z.string().optional(),
+    facebook: z.string().optional(),
+    instagram: z.string().optional(),
+    logoUrl: z.string().url("URL de logo inválida.").optional(),
+});
+
+export const AddUserSchema = z.object({
+    name: z.string().min(1, "El nombre es obligatorio."),
+    email: z.string().email("Email inválido."),
+    role: z.enum(['Administrador', 'Mecanico', 'Cliente']),
+});
+
+export const CameraSchema = z.object({
+    name: z.string().min(1, "El nombre es obligatorio."),
+    rtspUrl: z.string().url("URL de RTSP inválida."),
+});
+
+export const EmailSettingsSchema = z.object({
+    host: z.string().min(1, "El host es obligatorio."),
+    port: z.number().int().min(1, "El puerto es obligatorio."),
+    user: z.string().optional(),
+    pass: z.string().optional(),
+    from: z.string().email("Email 'from' inválido."),
+    secure: z.boolean(),
+});
+
+export const CustomerSchema = z.object({
+    name: z.string().min(1, "El nombre es obligatorio."),
+    email: z.string().email("Email inválido."),
+    phone: z.string().min(1, "El teléfono es obligatorio."),
 });

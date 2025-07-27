@@ -2,58 +2,59 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { z, ZodError } from 'zod';
+import { db } from '@/lib/firebase-admin';
+import { requireRole } from '@/lib/server-auth';
+import { DVITemplateUpdateSchema } from '@/lib/schemas';
 import type { DVITemplate } from '@/lib/types';
+import { FieldValue } from 'firebase-admin/firestore';
 
 /**
  * Fetches a single DVI template from Firestore by its ID.
- * @param templateId The ID of the template to fetch.
+ * Requires staff-level access.
  */
 export async function fetchDVITemplateAction(templateId: string): Promise<DVITemplate | null> {
-    try {
-        if (!templateId) {
-            console.error("fetchDVITemplateAction called with no ID.");
-            return null;
-        }
-        const templateDocRef = doc(db, 'dvi-templates', templateId);
-        const templateDoc = await getDoc(templateDocRef);
+    await requireRole(['Administrador', 'Mecanico', 'Cajero']);
+    
+    if (!templateId) return null;
 
-        if (!templateDoc.exists()) {
-            console.warn(`DVI Template with id ${templateId} not found.`);
-            return null;
-        }
-        
-        return { id: templateDoc.id, ...templateDoc.data() } as DVITemplate;
+    const templateDocRef = db.collection('dvi-templates').doc(templateId);
+    const templateDoc = await templateDocRef.get();
 
-    } catch (error) {
-        console.error(`Error fetching DVI template ${templateId}:`, error);
-        throw new Error('Failed to fetch DVI template.');
-    }
+    if (!templateDoc.exists()) return null;
+    
+    return { id: templateDoc.id, ...templateDoc.data() } as DVITemplate;
 }
 
 /**
  * Updates an existing DVI template in Firestore.
- * @param template The full template object to update.
+ * Only Administrators can perform this action.
  */
-export async function updateDVITemplateAction(template: DVITemplate) {
-    if (!template || !template.id) {
-        return { success: false, message: 'Template data or ID is missing.' };
-    }
+export async function updateDVITemplateAction(templateData: z.infer<typeof DVITemplateUpdateSchema>) {
+    await requireRole(['Administrador']);
 
     try {
-        const templateDocRef = doc(db, 'dvi-templates', template.id);
+        const { id, ...dataToUpdate } = DVITemplateUpdateSchema.parse(templateData);
         
-        // Create a copy of the template data, excluding the id field for the update payload.
-        const { id, ...templateData } = template;
+        const templateDocRef = db.collection('dvi-templates').doc(id);
 
-        await updateDoc(templateDocRef, templateData);
+        if (!(await templateDocRef.get()).exists) {
+            return { success: false, message: 'La plantilla no existe.' };
+        }
+
+        await templateDocRef.update({
+            ...dataToUpdate,
+            updatedAt: FieldValue.serverTimestamp()
+        });
         
-        revalidatePath(`/dvi/templates/${template.id}`);
+        revalidatePath(`/dvi/templates/${id}`);
         revalidatePath('/dvi/templates');
-        return { success: true, message: 'Template updated successfully.' };
+        return { success: true, message: 'Plantilla actualizada con éxito.' };
     } catch (error) {
-        console.error(`Error updating DVI template ${template.id}:`, error);
-        return { success: false, message: 'Failed to update template.' };
+        console.error(`Error updating DVI template:`, error);
+        if (error instanceof ZodError) {
+            return { success: false, message: 'Datos inválidos.', errors: error.flatten().fieldErrors };
+        }
+        return { success: false, message: 'Ocurrió un error al actualizar la plantilla.' };
     }
 }

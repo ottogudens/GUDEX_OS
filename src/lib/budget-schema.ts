@@ -1,22 +1,23 @@
 
 import { z } from 'zod';
 
-export const BudgetItemSchema = z.object({
-  description: z.string().min(1, 'La descripción no puede estar vacía.'),
-  quantity: z.number().min(1, 'La cantidad debe ser al menos 1.'),
-  price: z.number().min(0, 'El precio no puede ser negativo.'),
+export const BudgetLineItemSchema = z.object({
+  id: z.string().optional(), // Puede ser el ID de un producto o servicio existente
+  description: z.string().min(1, "La descripción es obligatoria."),
+  quantity: z.number().min(1, "La cantidad debe ser al menos 1."),
+  unitPrice: z.number().min(0, "El precio unitario no puede ser negativo."),
+  itemType: z.enum(['product', 'service']).default('service'),
 });
 
 export const BudgetSchema = z.object({
-  id: z.string(),
-  customerId: z.string().min(1, "Debes seleccionar un cliente."),
-  vehicleId: z.string().min(1, "Debes seleccionar un vehículo."),
-  items: z.array(BudgetItemSchema).min(1, "El presupuesto debe tener al menos un ítem."),
-  total: z.number(),
-  status: z.enum(['Pendiente', 'Aprobado', 'Rechazado']),
-  createdById: z.string(),
-  createdByName: z.string(),
-  createdAt: z.any(),
+  customerId: z.string().min(1, "El cliente es obligatorio."),
+  vehicleId: z.string().min(1, "El vehículo es obligatorio."),
+  status: z.enum(['pending', 'approved', 'rejected', 'expired']).default('pending'),
+  
+  items: z.array(BudgetLineItemSchema).min(1, "El presupuesto debe tener al menos un ítem."),
+  
+  notes: z.string().optional(),
+  validUntil: z.date().optional(),
 });
 
-export type Budget = z.infer<typeof BudgetSchema>;
+export type BudgetFormData = z.infer<typeof BudgetSchema>;

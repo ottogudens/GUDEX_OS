@@ -20,8 +20,8 @@ import { db } from './firebase';
 import { storage } from './firebase';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { revalidatePath } from 'next/cache';
-import { Customer, Vehicle, Appointment, WorkOrder, Service, ServiceCategory, Product, Sale, Provider } from './types';
-import { VehicleFormData, WorkOrderFormData, ServiceSchema, ProductSchema, ProviderFormData } from './schemas';
+import { Customer, Vehicle, Appointment, WorkOrder, Service, ServiceCategory, Product, Sale, Provider, Budget, PurchaseInvoice, CashRegisterSession, CashMovement, Camera, User, EmailSettings } from './types';
+import { VehicleFormData, WorkOrderFormData, ServiceSchema, ProductSchema, ProviderFormData, WorkshopSettingsSchema, AddUserSchema, CameraSchema, EmailSettingsSchema } from './schemas';
 import * as z from 'zod';
 
 // =================================
@@ -81,6 +81,12 @@ export async function deleteCustomer(customerId: string) {
 // =================================
 // VEHICLE MUTATIONS
 // =================================
+
+export async function createVehicle(data: VehicleFormData) {
+    // Placeholder implementation
+    console.log("Creating vehicle with data:", data);
+    return { success: true };
+}
 
 export async function updateVehicle(vehicleId: string, data: VehicleFormData, imageFile: File | null) {
     try {
@@ -438,7 +444,92 @@ export async function createAppointmentRequest(data: any) {
     }
 }
 
-export async function createPurchaseInvoice(data: any) {
+export async function createPurchaseInvoice(data: PurchaseInvoice) {
+    // Placeholder implementation
     console.log("Creating purchase invoice with data:", data);
+    return { success: true };
+}
+
+export async function openCashRegister(data: CashRegisterSession) {
+    // Placeholder implementation
+    console.log("Opening cash register with data:", data);
+    return { success: true };
+}
+
+export async function addCashMovement(data: CashMovement) {
+    // Placeholder implementation
+    console.log("Adding cash movement with data:", data);
+    return { success: true };
+}
+
+export async function closeCashRegister(data: CashRegisterSession) {
+    // Placeholder implementation
+    console.log("Closing cash register with data:", data);
+    return { success: true };
+}
+
+export async function updateWorkshopSettings(data: WorkshopSettingsSchema) {
+    // Placeholder implementation
+    console.log("Updating workshop settings with data:", data);
+    return { success: true };
+}
+
+export async function addUser(data: AddUserSchema) {
+    // Placeholder implementation
+    console.log("Adding user with data:", data);
+    return { success: true };
+}
+
+export async function updateUser(data: User) {
+    // Placeholder implementation
+    console.log("Updating user with data:", data);
+    return { success: true };
+}
+
+export async function deleteUser(data: User) {
+    // Placeholder implementation
+    console.log("Deleting user with data:", data);
+    return { success: true };
+}
+
+export async function createCamera(data: CameraSchema) {
+    // Placeholder implementation
+    console.log("Creating camera with data:", data);
+    return { success: true };
+}
+
+export async function updateCamera(data: Camera) {
+    // Placeholder implementation
+    console.log("Updating camera with data:", data);
+    return { success: true };
+}
+
+export async function deleteCamera(data: Camera) {
+    // Placeholder implementation
+    console.log("Deleting camera with data:", data);
+    return { success: true };
+}
+
+export async function updateEmailSettings(data: EmailSettingsSchema) {
+    // Placeholder implementation
+    console.log("Updating email settings with data:", data);
+    return { success: true };
+}
+
+export async function migrateExistingDataToCorrelativeCodes() {
+    // Placeholder implementation
+    console.log("Migrating existing data to correlative codes...");
+    return { success: true };
+}
+
+export async function updateBudget(data: Budget) {
+    // Placeholder implementation
+    console.log("Updating budget with data:", data);
+    return { success: true };
+}
+
+export async function createBudget(data: Budget) {
+    // Placeholder implementation
+    console.log("Creating budget with data:", data);
     return { success: true };
 }

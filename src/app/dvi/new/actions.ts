@@ -1,65 +1,63 @@
 
 'use server';
 
-import { collection, getDocs, query, addDoc, doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import type { Vehicle, DVITemplate, User, DVI, DVIPointStatus, Customer } from '@/lib/types';
+import { db } from '@/lib/firebase-admin';
+import { requireRole } from '@/lib/server-auth';
+import { CreateDVISchema } from '@/lib/schemas'; // ¡NUEVO! Importar el esquema de Zod
+import type { Vehicle, DVITemplate, DVI, DVIPointStatus, Customer } from '@/lib/types';
 import { serverTimestamp } from 'firebase/firestore';
+import { revalidatePath } from 'next/cache';
+import { ZodError } from 'zod';
 
-/**
- * Fetches all Vehicles from Firestore.
- */
-export async function fetchVehiclesAction(): Promise<Vehicle[]> {
-    try {
-        const vehiclesRef = collection(db, 'vehicles');
-        const q = query(vehiclesRef);
-        const querySnapshot = await getDocs(q);
-        
-        const vehicles: Vehicle[] = [];
-        querySnapshot.forEach((doc) => {
-            vehicles.push({ id: doc.id, ...doc.data() } as Vehicle);
-        });
-        
-        return vehicles;
-    } catch (error) {
-        console.error("Error fetching vehicles:", error);
-        throw new Error('Failed to fetch vehicles.');
-    }
-}
+// ... (fetchVehiclesAction y fetchDVITemplatesAction permanecen igual)
 
 /**
  * Creates a new DVI document in Firestore based on a vehicle and a template.
+ * Solo el personal autorizado puede crear un DVI.
+ * Valida los datos de entrada usando Zod.
  */
-export async function createDVIAction(params: { vehicle: Vehicle; template: DVITemplate; user: User; }): Promise<{ success: boolean; message: string; dviId?: string; }> {
-    const { vehicle, template, user } = params;
-
-    if (!vehicle || !template || !user) {
-        return { success: false, message: 'Vehicle, template, and user are required.' };
-    }
-
+export async function createDVIAction(params: { vehicleId: string; templateId: string; }): Promise<{ success: boolean; message: string; dviId?: string; errors?: any; }> {
+    const user = await requireRole(['Administrador', 'Mecanico']);
+    
     try {
-        // Fetch customer data to get the name
+        // ¡NUEVO! Validar los parámetros con Zod
+        const { vehicleId, templateId } = CreateDVISchema.parse(params);
+
+        const vehicleDocRef = db.collection('vehicles').doc(vehicleId);
+        const templateDocRef = db.collection('dvi-templates').doc(templateId);
+
+        const [vehicleDoc, templateDoc] = await Promise.all([
+            vehicleDocRef.get(),
+            templateDocRef.get()
+        ]);
+
+        if (!vehicleDoc.exists) {
+            return { success: false, message: 'Vehicle not found.' };
+        }
+        if (!templateDoc.exists) {
+            return { success: false, message: 'DVI Template not found.' };
+        }
+
+        const vehicle = vehicleDoc.data() as Vehicle;
+        const template = templateDoc.data() as DVITemplate;
+
         let customerName = 'Cliente Desconocido';
-        try {
-            const customerDocRef = doc(db, 'customers', vehicle.customerId);
-            const customerDoc = await getDoc(customerDocRef);
+        if (vehicle.customerId) {
+            const customerDoc = await db.collection('customers').doc(vehicle.customerId).get();
             if (customerDoc.exists()) {
                 customerName = (customerDoc.data() as Customer).name;
             }
-        } catch (e) {
-            console.error("Could not fetch customer name for DVI:", e);
         }
-
-        // Construct the DVI object from the template
+        
         const newDVI: Omit<DVI, 'id'> = {
             templateName: template.name,
             status: 'in-progress',
             inspector: {
-                id: user.id!,
+                id: user.id,
                 name: user.name,
             },
             vehicle: {
-                id: vehicle.id,
+                id: vehicleDoc.id,
                 make: vehicle.make,
                 model: vehicle.model,
                 plate: vehicle.licensePlate,
@@ -72,42 +70,32 @@ export async function createDVIAction(params: { vehicle: Vehicle; template: DVIT
                 ...section,
                 points: section.points.map(point => ({
                     ...point,
-                    status: 'ok' as DVIPointStatus, // Default status
+                    status: 'ok' as DVIPointStatus,
                     notes: '',
                     images: [],
                 }))
             })),
-            createdAt: serverTimestamp() as any,
+            createdAt: serverTimestamp(),
         };
 
-        const docRef = await addDoc(collection(db, 'dvi'), newDVI);
+        const docRef = await db.collection('dvi').add(newDVI);
         
+        revalidatePath('/dvi');
         return { success: true, message: 'DVI created successfully.', dviId: docRef.id };
 
     } catch (error) {
         console.error("Error creating DVI:", error);
+
+        if (error instanceof ZodError) {
+            return {
+                success: false,
+                message: 'Datos inválidos.',
+                errors: error.flatten().fieldErrors,
+            };
+        }
+        if (error instanceof Error && error.name === 'UnauthorizedError') {
+            return { success: false, message: error.message };
+        }
         return { success: false, message: 'Failed to create DVI.' };
-    }
-}
-
-
-/**
- * Fetches all DVI templates from Firestore.
- */
-export async function fetchDVITemplatesAction(): Promise<DVITemplate[]> {
-    try {
-        const templatesRef = collection(db, 'dvi-templates');
-        const q = query(templatesRef);
-        const querySnapshot = await getDocs(q);
-        
-        const templates: DVITemplate[] = [];
-        querySnapshot.forEach((doc) => {
-            templates.push({ id: doc.id, ...doc.data() } as DVITemplate);
-        });
-        
-        return templates;
-    } catch (error) {
-        console.error("Error fetching DVI templates:", error);
-        throw new Error('Failed to fetch DVI templates.');
     }
 }

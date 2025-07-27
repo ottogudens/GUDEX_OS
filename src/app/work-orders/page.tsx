@@ -40,7 +40,7 @@ import {
     fetchCustomers,
     fetchProducts,
     fetchServices,
-    fetchVehiclesByCustomerId
+    fetchVehiclesByCustomer
 } from '@/lib/data';
 import { createWorkOrder, updateWorkOrderStatus } from '@/lib/mutations';
 import { WorkOrderSchema, type WorkOrderFormData } from '@/lib/schemas';
@@ -230,7 +230,7 @@ export default function WorkOrdersPage() {
           setNewOrder(prev => ({ ...prev, customerId: customer.id, customer: customer.name, vehicleId: undefined, vehicle: undefined }));
           setCustomerVehicles([]);
           try {
-            const vehicles = await fetchVehiclesByCustomerId(customerId);
+            const vehicles = await fetchVehiclesByCustomer(customerId);
             setCustomerVehicles(vehicles);
           } catch (e) {
             toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los vehículos del cliente.' });

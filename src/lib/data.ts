@@ -19,10 +19,11 @@ import {
   endOfMonth,
   getCountFromServer,
   deleteDoc,
+  updateDoc,
 } from 'firebase/firestore';
 import { unstable_noStore as noStore, revalidatePath } from 'next/cache';
 import { db } from './firebase';
-import type { Customer, Service, ServiceHistory, User, Vehicle, Product, WorkshopSettings, ServiceCategory, Camera, WorkOrder, Receipt, DashboardData, Sale, SalesSummaryData, BestSeller, CashRegisterSession, CashMovement, ProductCategory, EmailSettings, SentEmail, EmailLog, StockLog, Provider, Budget, Appointment, BudgetRequest } from './types';
+import type { Customer, Service, ServiceHistory, User, Vehicle, Product, WorkshopSettings, ServiceCategory, Camera, WorkOrder, Receipt, DashboardData, Sale, SalesSummaryData, BestSeller, CashRegisterSession, CashMovement, ProductCategory, EmailSettings, SentEmail, EmailLog, StockLog, Provider, Budget, Appointment, BudgetRequest, PurchaseInvoice } from './types';
 import { subMonths, format, startOfDay } from 'date-fns';
 
 function safeGetDate(dateField: any): string {
@@ -914,4 +915,11 @@ export async function updateBudgetStatus(budgetId: string, status: 'Aprobado' | 
     status: status,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function fetchPurchaseInvoices(): Promise<PurchaseInvoice[]> {
+  noStore();
+  // Placeholder implementation
+  console.log("Fetching purchase invoices...");
+  return [];
 }

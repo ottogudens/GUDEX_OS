@@ -3,21 +3,25 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { requireRole } from '@/lib/server-auth';
 
 const execAsync = promisify(exec);
 
-const BOT_NAME = 'whatsapp-bot'; // Debe coincidir con el 'name' en ecosystem.config.cjs
-const BOT_DIR = 'whatsappbot'; // El directorio donde reside el bot
+// --- ZONA DE ALTO RIESGO ---
+// Estas acciones ejecutan comandos de terminal en el servidor.
+// DEBEN estar protegidas con la máxima restricción de roles.
 
-// Helper genérico para comandos simples como 'stop' y 'restart'
-async function runPM2Command(command: string) {
+const BOT_NAME = 'whatsapp-bot';
+const BOT_DIR = 'whatsappbot';
+
+// Función de ayuda interna. La protección de rol se hace en las acciones exportadas.
+async function runPM2Command(command: 'stop' | 'restart') {
     try {
         const { stdout, stderr } = await execAsync(`cd ${BOT_DIR} && pm2 ${command} ${BOT_NAME}`);
         if (stderr) {
             if (stderr.includes('does not exist') || stderr.includes('not found')) {
                 return { success: true, message: `El bot '${BOT_NAME}' ya estaba detenido.` };
             }
-            // Tratar otros mensajes de stderr como advertencias, no como errores fatales.
             console.warn(`PM2 stderr for command '${command}':`, stderr);
         }
         return { success: true, message: `Comando '${command}' ejecutado con éxito.`, data: stdout };
@@ -27,9 +31,9 @@ async function runPM2Command(command: string) {
     }
 }
 
-
 export async function getBotStatusAction(): Promise<{ status: 'online' | 'stopped' | 'errored', details: string }> {
-    // Usamos 'jlist' para obtener un JSON fácil de parsear.
+    await requireRole(['Administrador']);
+    
     const result = await execAsync(`cd ${BOT_DIR} && pm2 jlist`).catch(() => ({ stdout: '[]', stderr: 'PM2 not running' }));
     
     try {
@@ -44,26 +48,23 @@ export async function getBotStatusAction(): Promise<{ status: 'online' | 'stoppe
             };
         }
     } catch (e) {
-        return { status: 'errored', details: 'No se pudo interpretar la respuesta de PM2. Puede que el servicio no esté corriendo.' };
+        return { status: 'errored', details: 'No se pudo interpretar la respuesta de PM2.' };
     }
 
-    return { status: 'stopped', details: 'El servicio del bot está detenido o no se encuentra en la lista de PM2.' };
+    return { status: 'stopped', details: 'El servicio del bot está detenido o no se encuentra.' };
 }
 
-export async function startBotAction() {
+export async function startBotAction(): Promise<{ success: boolean, message: string }> {
+    await requireRole(['Administrador']);
     try {
-        // Usamos el archivo de configuración, que es la forma más robusta de iniciar.
-        // PM2 es lo suficientemente inteligente para no duplicar el proceso si ya existe.
         const { stdout, stderr } = await execAsync(`cd ${BOT_DIR} && pm2 start ecosystem.config.cjs`);
 
         if (stderr && stderr.includes('already launched')) {
             return { success: true, message: 'El bot ya se encuentra en línea.' };
         } else if (stderr) {
-            // Captura otros posibles errores durante el arranque
             return { success: false, message: `Error al iniciar: ${stderr}` };
         }
 
-        // Guardamos el estado para que PM2 lo reviva después de reinicios del sistema.
         await execAsync(`cd ${BOT_DIR} && pm2 save`);
         
         return { success: true, message: 'El bot se ha iniciado correctamente.' };
@@ -73,10 +74,12 @@ export async function startBotAction() {
     }
 }
 
-export async function stopBotAction() {
+export async function stopBotAction(): Promise<{ success: boolean, message: string }> {
+    await requireRole(['Administrador']);
     return runPM2Command('stop');
 }
 
-export async function restartBotAction() {
+export async function restartBotAction(): Promise<{ success: boolean, message: string }> {
+    await requireRole(['Administrador']);
     return runPM2Command('restart');
 }
